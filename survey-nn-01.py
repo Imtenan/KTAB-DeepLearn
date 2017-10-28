@@ -141,6 +141,7 @@ y_vals_train = y_data[train_indices]
 
 x_vals_test = x_data[test_indices]
 y_vals_test = y_data[test_indices]
+
 # ---------------------------------------------
 #%%
 # setup training
@@ -223,14 +224,17 @@ test_ma = 0.0
 loss_vec = []
 train_vec = []
 test_vec = []
+test_acc = []
 
 num_steps =  5000
 print_freq = round(num_steps / 10.0)
 
+xy_test_dict = {x_data:x_vals_test, y_trgt:y_vals_test}
+
 for i in range(num_steps+1):
-    rand_indices = random.sample(range(num_train_rows), batch_size)
-    rand_x = x_vals_train[rand_indices]
-    rand_y = y_vals_train[rand_indices]
+    #rand_indices = random.sample(range(num_train_rows), batch_size)
+    #rand_x = x_vals_train[rand_indices]
+    #rand_y = y_vals_train[rand_indices]
     
     #print("rand_x shape: %s" % str(rand_x.shape))
     #print("rand_y shape: %s" % str(rand_y.shape))
@@ -240,7 +244,7 @@ for i in range(num_steps+1):
     #print("y_trgt shape: %s" % str(y_trgt.shape))
     
     # train on this batch, and record loss on it
-    xy_dict = {x_data:rand_x, y_trgt:rand_y}
+    #xy_dict = {x_data:rand_x, y_trgt:rand_y}
     
     # Note that the first report is after the first training step
     sess.run(train_step, feed_dict=xy_dict)
@@ -255,15 +259,21 @@ for i in range(num_steps+1):
     train_ma = kl.smooth(train_ma, tmp_acc_train, theta, (0 == i))
     train_vec.append(train_ma)
     
-    # record accuracy over random part of test set
-    num_tmp_test = int(num_test_rows/100.0)
-    rand_indices = random.sample(range(num_test_rows), num_tmp_test)
-    rand_x = x_vals_test[rand_indices]
-    rand_y = y_vals_test[rand_indices]
-    tmp_acc_test = sess.run(accuracy, feed_dict={x_data:rand_x, y_trgt:rand_y})
-    tmp_acc_test = kl.log_odds(tmp_acc_test)
-    test_ma = kl.smooth(test_ma, tmp_acc_test, theta, (0 == i))
+    # record accuracy over the etire test set
+    test_acc.append(sess.run(accuracy,feed_dict = xy_test_dict))
+    test_v = kl.log_odds(test_acc[-1])
+    test_ma = kl.smooth(test_ma, test_v, theta, (0 == i))
     test_vec.append(test_ma)
+    
+    # record accuracy over random part of test set
+#    num_tmp_test = int(num_test_rows/100.0)
+#    rand_indices = random.sample(range(num_test_rows), num_tmp_test)
+#    rand_x = x_vals_test[rand_indices]
+#    rand_y = y_vals_test[rand_indices]
+#    tmp_acc_test = sess.run(accuracy, feed_dict={x_data:rand_x, y_trgt:rand_y})
+#    tmp_acc_test = kl.log_odds(tmp_acc_test)
+#    test_ma = kl.smooth(test_ma, tmp_acc_test, theta, (0 == i))
+#    test_vec.append(test_ma)
     
     if (0 == i % print_freq): 
         print("Smoothed step %u/%u, train batch loss: %.4f, train batch acc: %.4f, Test acc: %.4f" % 
@@ -302,7 +312,7 @@ plt.show()
 #print ('A on ' + str(x_headers) + ': \n' + str(sess.run(A)))
 #print ('b: \n' + str(sess.run(b)))
 
-
+plt.figure()
 plt.plot(train_vec, 'b-', label='Train batch')
 plt.plot(test_vec, 'r-', label='Test set')
 plt.title('Log-Odds Accuracy vs Generation')
@@ -310,6 +320,12 @@ plt.xlabel('Generation')
 plt.ylabel('Log-Odds Accuracy')
 plt.legend(loc='lower right')
 plt.show()
+
+plt.figure()
+plt.plot(test_acc)
+plt.title('Test Set Classification Accuracy')
+print('Final Model Test Set Classification Accuracy = %0.2f%%'%(100*test_acc[-1]))
+
 # ---------------------------------------------
 #%%
 # close out the session and save the event-files
