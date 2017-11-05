@@ -30,7 +30,6 @@
 #
 # ---------------------------------------------
 
-import random
 import sys 
 import datetime
 
@@ -64,12 +63,9 @@ sess = tf.Session()
 
 # ---------------------------------------------
 #%%
-
-
 # start recording for TensorBoard
 log_file_name = 'log-'+str(prng_seed)
 writer = tf.summary.FileWriter('log/'+log_file_name, sess.graph) 
-
 
 csv_file_name = 'tmp_survey2.csv'
 csvfile = open(csv_file_name, newline='')
@@ -80,7 +76,6 @@ csv_data_obj = csv.reader(csvfile, delimiter=',', quotechar='|')
 for row in csv_data_obj:
     #print(' , '.join(row))
     csv_data.append(row)
-
 
 # ---------------------------------------------
 #%%
@@ -126,8 +121,8 @@ print('y-shape: ' + str(y_data.shape))
 #%%
 # use sklearn to perform stratified randomized partitioning into training and dev sets
 # this is necessary because the vehicle choice dataset is very unbalanced
-trainPerc = 0.95 # deep learning uses much higher %'s for training
-sss = StratifiedShuffleSplit(n_splits=1, train_size=trainPerc)
+trainPerc = 0.95; devePerc = 0.05 # deep learning uses much higher %'s for training
+sss = StratifiedShuffleSplit(n_splits=1, train_size=trainPerc, test_size = devePerc)
 train_indices,deve_indices = next(sss.split(x_data, y_data))
 num_train_rows = len(train_indices) # need this later on
 # create the patitions
@@ -142,75 +137,84 @@ print("num_train_rows: %u, num_deve_rows: %u" %(num_train_rows, len(deve_indices
 # ---------------------------------------------
 #%%
 # setup training
-a_stdv = 0.1
-#b_stdv = 0.0 # no longer needed, since bs are now init'd to 0
-learn_rate = 1.0
-lambd = 0.5
-
+a_stdv = 0.1          # standard dev. for initialization of node weights
+learn_rate = 1.0      # gradient descent learning rate
+lambd = 0.5           # rate of normalization of the loss function
+batch_size = 100      # size of mini-batches used in training
+num_steps = 5000      # number training iterations
 
 layer_0_width = num_data_col    # always number of inputs
 layer_1_width = int(2.0*num_choice_col)
 layer_2_width = num_choice_col
 
-
-batch_size = 100
-print("batch_size: %u" %  batch_size)
+# talk some
+print('Hyperparameters\n\tlearning rate: %0.2f\n\tregularization lambda: %0.2f\n\tminibatch_size: %u'\
+      %(learn_rate,lambd,batch_size))
 
 # ---------------------------------------------
 #%%
-# number of rows could be batch_size, num_rows_train, or num_rows_test.
+# number of rows could be batch_size, num_rows_train, or num_rows_deve.
 # So we mark it as None, which really means variable-size
 x_data = tf.placeholder(shape=[None, num_data_col], dtype=tf.float32)
 y_trgt = tf.placeholder(shape=[None, num_choice_col], dtype=tf.float32)
+yhat = tf.placeholder(shape=[None, num_choice_col], dtype=tf.float32)
 
 print("x_data shape: %s" % str(x_data.shape))
 print("y_trgt shape: %s" % str(y_trgt.shape))
 
 # ---------------------------------------------
 #%%
-A1 = tf.Variable(tf.random_normal(shape=[layer_0_width, layer_1_width],  mean=0.0, stddev=a_stdv))
-print("A1 shape: %s" % str(A1.shape))
-b1 = tf.Variable(tf.zeros(shape=[layer_1_width])) # a 0-rank array?
-print("b1 shape: %s" % str(b1.shape))
-out1 =  tf.nn.relu(tf.add(tf.matmul(x_data,A1), b1))
-print("out1 shape: %s" % str(out1.shape))
+# FIRST hidden layer
+with tf.name_scope('NN'):
+  A1 = tf.Variable(tf.random_normal(shape=[layer_0_width, layer_1_width],  mean=0.0, stddev=a_stdv))
+  print("A1 shape: %s" % str(A1.shape))
+  b1 = tf.Variable(tf.zeros(shape=[layer_1_width])) # a 0-rank array?
+  print("b1 shape: %s" % str(b1.shape))
+  out1 =  tf.nn.relu(tf.add(tf.matmul(x_data,A1), b1))
+  print("out1 shape: %s" % str(out1.shape))
 
 # ---------------------------------------------
 #%%
-A2 = tf.Variable(tf.random_normal(shape=[layer_1_width, layer_2_width],  mean=0.0, stddev=a_stdv))
-print("A2 shape: %s" % str(A2.shape))
-b2 = tf.Variable(tf.zeros(shape=[layer_2_width])) # a 0-rank array?
-print("b2 shape: %s" % str(b2.shape))
-out2 = tf.add(tf.matmul(out1, A2), b2)
-print("out2 shape: %s" % str(out2.shape))
+# SECOND hidden layer
+with tf.name_scope('NN'):
+  A2 = tf.Variable(tf.random_normal(shape=[layer_1_width, layer_2_width],  mean=0.0, stddev=a_stdv))
+  print("A2 shape: %s" % str(A2.shape))
+  b2 = tf.Variable(tf.zeros(shape=[layer_2_width])) # a 0-rank array?
+  print("b2 shape: %s" % str(b2.shape))
+  out2 = tf.add(tf.matmul(out1, A2), b2)
+  print("out2 shape: %s" % str(out2.shape))
  
 # ---------------------------------------------
 #%%
 # note that 'labels' are real numbers in [0,1] interval,
 # logits are in (-inf, +inf)
-loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels = y_trgt, logits = out2))
-init = tf.global_variables_initializer()
-sess.run(init)
+with tf.name_scope('Loss'):
+  loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels = y_trgt, logits = out2))
 
-regularizer =  tf.add(tf.nn.l2_loss(A1), tf.nn.l2_loss(A2))
+with tf.name_scope('Train'):
+  regularizer =  tf.add(tf.nn.l2_loss(A1), tf.nn.l2_loss(A2))
+  my_opt = tf.train.GradientDescentOptimizer(learn_rate)
+  train_step = my_opt.minimize(loss + lambd*regularizer/(2*batch_size))
 
-my_opt = tf.train.GradientDescentOptimizer(learn_rate)
-train_step = my_opt.minimize(loss + lambd*regularizer/(2*batch_size))
-
-print()
 # ---------------------------------------------
 #%%
-# record standard classification performance metrixs
-yhat = tf.sigmoid(out2)
-accuracy = tf.metrics.accuracy(y_trgt,yhat)
-recall = tf.metrics.recall(y_trgt,yhat)
-precision = tf.metrics.precision(y_trgt,yhat)
-F1 = 2*tf.divide(tf.multiply(precision,recall),tf.add(precision+recall))
+# record standard classification performance metrics
+with tf.name_scope('Eval'):
+  _,accuracy = tf.metrics.accuracy(y_trgt,yhat)
+  _,recall = tf.metrics.recall(y_trgt,yhat)
+  _,precision = tf.metrics.precision(y_trgt,yhat)
+  # define the writer summaries - how do I get one for F1?
+  accSummary = tf.summary.scalar('ACC', accuracy)
+  preSummary = tf.summary.scalar('PRE', precision)
+  recSummary = tf.summary.scalar('REC', recall)
 
 # ---------------------------------------------
 #%%
 # finally perform the training simulation
-num_steps = 5000
+sess.run(tf.global_variables_initializer())
+sess.run(tf.local_variables_initializer())
+# The saver object will save all the variables
+saver = tf.train.Saver()
 
 # randomly generate the minibatches all at once
 batchIndxs = np.random.randint(0,num_train_rows,(num_steps,batch_size))
@@ -220,15 +224,14 @@ theta = 0.010 # weight on new value  - only for printing/plotting MAs
 loss_ma = 0.0; train_ma = [0.0]*4 # accuracy, precision, recall, F1
 
 loss_vec = [0.0]*num_steps
-train_vec = [[0.0]*4*num_steps # will record accuracy, precision, recall, F1
-#deve_vec = [[0.0]*4*num_steps
+train_vec = [[0.0]*4 for _ in range(num_steps)] # will record accuracy, precision, recall, F1
 
 print_freq = num_steps//10
-
+print('Training Begun')
 for i in range(num_steps):
   # get this minibatch
-  rand_x = x_vals_train[batchIndxs[i]]
-  rand_y = y_vals_train[batchIndxs[i]]   
+  rand_x = x_vals_train[batchIndxs[i],:]
+  rand_y = y_vals_train[batchIndxs[i],:]
   # train on this batch, and record loss on it
   xy_dict = {x_data:rand_x, y_trgt:rand_y}
     
@@ -240,56 +243,51 @@ for i in range(num_steps):
   loss_vec[i]=loss_ma
     
   # record performance metrics over current minibatch
-  tmp_acc_train = sess.run(accuracy, feed_dict=xy_dict)
+  pred = sess.run(tf.round(tf.sigmoid(out2)), feed_dict = xy_dict)
+  yyhat_dict = {y_trgt:rand_y, yhat:pred}
+  tmp_acc_train = sess.run(accuracy, feed_dict=yyhat_dict)
   train_ma[0] = kl.smooth(train_ma[0], tmp_acc_train, theta, (0 == i))
-  tmp_pre_train = sess.run(precision, feed_dict=xy_dict)
+  tmp_pre_train = sess.run(precision, feed_dict=yyhat_dict)
   train_ma[1] = kl.smooth(train_ma[1], tmp_pre_train, theta, (0 == i))
-  tmp_rec_train = sess.run(recall, feed_dict=xy_dict)
+  tmp_rec_train = sess.run(recall, feed_dict=yyhat_dict)
   train_ma[2] = kl.smooth(train_ma[2], tmp_rec_train, theta, (0 == i))
-  tmp_f1s_train = sess.run(F1, feed_dict=xy_dict)
+  tmp_f1s_train = 2*(train_ma[1]*train_ma[2])/(train_ma[1]+train_ma[2])
   train_ma[3] = kl.smooth(train_ma[3], tmp_f1s_train, theta, (0 == i))
   #tmp_acc_train = kl.log_odds(tmp_acc_train) 
-  train_vec[i] = train_ma
-    
-#  # record performance metrics over dev set
-#  tmp_acc_deve = sess.run(accuracy, feed_dict=xy_dict)
-#  deve_ma[0] = kl.smooth(deve_ma[0], tmp_acc_deve, theta, (0 == i))
-#  tmp_pre_deve = sess.run(precision, feed_dict=xy_dict)
-#  deve_ma[1] = kl.smooth(deve_ma[1], tmp_pre_deve, theta, (0 == i))
-#  tmp_rec_deve = sess.run(recall, feed_dict=xy_dict)
-#  deve_ma[2] = kl.smooth(deve_ma[2], tmp_rec_deve, theta, (0 == i))
-#  tmp_f1s_deve = sess.run(F1, feed_dict=xy_dict)
-#  deve_ma[3] = kl.smooth(deve_ma[3], tmp_f1s_deve, theta, (0 == i))
-#  #tmp_acc_deve = kl.log_odds(tmp_acc_deve) 
-#  deve_vec[i] = deve_ma
-
-    
+  train_vec[i] = train_ma.copy()
+       
   if (0 == i % print_freq): 
     print("Smoothed step %u/%u, train batch loss: %0.4f, train batch perf: acc=%0.4f,pre=%0.4f,rec=%0.4f,F1=%0.4f"% 
         (i+1, num_steps, loss_ma, *train_ma))
+    # save summary stats
+    writer.add_summary(accSummary.eval(feed_dict = yyhat_dict,session=sess), i)
+    writer.add_summary(preSummary.eval(feed_dict = yyhat_dict,session=sess), i)
+    writer.add_summary(recSummary.eval(feed_dict = yyhat_dict,session=sess), i)
+    # might want to consider checkpointing somewhere like here
 
 # ---------------------------------------------
-# compute and display the same for the dev set
+# compute and display the performance metrics for the dev set
 print('Computing Dev Set Performance Metrics...')
-xy_dict = {x_data:x_vals_deve, y_trgt:y_vals_deve}
-acc_deve = sess.run(accuracy, feed_dict=xy_dict)
-pre_deve = sess.run(precision, feed_dict=xy_dict)
-rec_deve = sess.run(recall, feed_dict=xy_dict)
-f1s_deve = sess.run(F1, feed_dict=xy_dict)
+pred = sess.run(tf.round(tf.sigmoid(out2)), feed_dict = {x_data:x_vals_deve, y_trgt:y_vals_deve})
+yyhat_dict = {y_trgt:y_vals_deve, yhat:pred}
+acc_deve = sess.run(accuracy, feed_dict=yyhat_dict)
+pre_deve = sess.run(precision, feed_dict=yyhat_dict)
+rec_deve = sess.run(recall, feed_dict=yyhat_dict)
+f1s_deve = 2*(pre_deve*rec_deve)/(pre_deve+rec_deve)
 #%%
 # display final training set  performance metrics
 print('Final Training Set Performance')
-print('\tAccuracy = 0.4f%'%train_vec[-1][0])
-print('\tPrecision = 0.4f%'%train_vec[-1][1])
-print('\tRecall = 0.4f%'%train_vec[-1][2])
-print('\tF1 = 0.4f%'%train_vec[-1][3])
+print('\tAccuracy = %0.4f'%train_vec[-1][0])
+print('\tPrecision = %0.4f'%train_vec[-1][1])
+print('\tRecall = %0.4f'%train_vec[-1][2])
+print('\tF1 = %0.4f'%train_vec[-1][3])
 
 # display final dev set  performance metrics
 print('Final Dev Set Performance')
-print('\tAccuracy = 0.4f%'%acc_deve)
-print('\tPrecision = 0.4f%'%pre_deve)
-print('\tRecall = 0.4f%'%rec_deve)
-print('\tF1 = 0.4f%'%f1s_deve)
+print('\tAccuracy = %0.4f'%acc_deve)
+print('\tPrecision = %0.4f'%pre_deve)
+print('\tRecall = %0.4f'%rec_deve)
+print('\tF1 = %0.4f'%f1s_deve)
     
 #%%
 # Now that all processing is finished, try to save the results
@@ -297,16 +295,13 @@ print('\tF1 = 0.4f%'%f1s_deve)
 # https://www.tensorflow.org/programmers_guide/variables
 # https://www.tensorflow.org/versions/r0.12/api_docs/python/state_ops/saving_and_restoring_variables
 
-# The saver object will save all the variables
-saver = tf.train.Saver()
-
 # Actually save the graph, tagging the file names with the step number.
 # This saves in several files, e.g.
 #    logit_model-2500.data-00000-of-00001
 #    logit_model-2500.index
 #    logit_model-2500.meta
 
-saver.save(sess, 'log/'+log_file_name, global_step=num_steps)
+saver.save(sess, 'log/'+log_file_name, global_step=num_steps-1)
 # ---------------------------------------------
 #%%
 # Display performance plots
