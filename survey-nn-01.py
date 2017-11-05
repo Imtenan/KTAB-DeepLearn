@@ -128,15 +128,16 @@ print('y-shape: ' + str(y_data.shape))
 # this is necessary because the vehicle choice dataset is very unbalanced
 trainPerc = 0.95 # deep learning uses much higher %'s for training
 sss = StratifiedShuffleSplit(n_splits=1, train_size=trainPerc)
-train_indices,test_indices = next(sss.split(x_data, y_data))
+train_indices,deve_indices = next(sss.split(x_data, y_data))
+num_train_rows = len(train_indices) # need this later on
 # create the patitions
-x_vals_train = x_data[train_indices]
-y_vals_train = y_data[train_indices]
+x_vals_train = x_data[train_indices,:]
+y_vals_train = y_data[train_indices,:]
 
-x_vals_test = x_data[test_indices]
-y_vals_test = y_data[test_indices]
+x_vals_deve = x_data[deve_indices,:]
+y_vals_deve = y_data[deve_indices,:]
 
-print("num_train_rows: %u, num_test_rows: %u" %(len(train_indices), len(test_indices)))
+print("num_train_rows: %u, num_deve_rows: %u" %(num_train_rows, len(deve_indices)))
 
 # ---------------------------------------------
 #%%
@@ -144,7 +145,7 @@ print("num_train_rows: %u, num_test_rows: %u" %(len(train_indices), len(test_ind
 a_stdv = 0.1
 #b_stdv = 0.0 # no longer needed, since bs are now init'd to 0
 learn_rate = 1.0
-beta = 0.0025 #0.001
+lambd = 0.5
 
 
 layer_0_width = num_data_col    # always number of inputs
@@ -178,7 +179,7 @@ print("out1 shape: %s" % str(out1.shape))
 #%%
 A2 = tf.Variable(tf.random_normal(shape=[layer_1_width, layer_2_width],  mean=0.0, stddev=a_stdv))
 print("A2 shape: %s" % str(A2.shape))
-b2 = tf.Variable(tf.zeros(shape=[layer_2l_width])) # a 0-rank array?
+b2 = tf.Variable(tf.zeros(shape=[layer_2_width])) # a 0-rank array?
 print("b2 shape: %s" % str(b2.shape))
 out2 = tf.add(tf.matmul(out1, A2), b2)
 print("out2 shape: %s" % str(out2.shape))
@@ -191,91 +192,105 @@ loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels = y_trgt, l
 init = tf.global_variables_initializer()
 sess.run(init)
 
-
 regularizer =  tf.add(tf.nn.l2_loss(A1), tf.nn.l2_loss(A2))
 
 my_opt = tf.train.GradientDescentOptimizer(learn_rate)
-train_step = my_opt.minimize(loss + beta*regularizer )
+train_step = my_opt.minimize(loss + lambd*regularizer/(2*batch_size))
 
 print()
 # ---------------------------------------------
 #%%
-# record prediction accuracy as well as cross-entropy loss
-
-prediction = tf.round(tf.sigmoid(out2)) # obviously round to {0,1}
-predictions_correct = tf.cast(tf.equal(prediction, y_trgt), tf.float32)
-accuracy = tf.reduce_mean(predictions_correct)
+# record standard classification performance metrixs
+yhat = tf.sigmoid(out2)
+accuracy = tf.metrics.accuracy(y_trgt,yhat)
+recall = tf.metrics.recall(y_trgt,yhat)
+precision = tf.metrics.precision(y_trgt,yhat)
+F1 = 2*tf.divide(tf.multiply(precision,recall),tf.add(precision+recall))
 
 # ---------------------------------------------
 #%%
+# finally perform the training simulation
+num_steps = 5000
 
-theta = 0.010 # weight on new value 
+# randomly generate the minibatches all at once
+batchIndxs = np.random.randint(0,num_train_rows,(num_steps,batch_size))
 
-loss_ma = 0.0
-train_ma = 0.0
-test_ma = 0.0
+# set up for moving averages
+theta = 0.010 # weight on new value  - only for printing/plotting MAs
+loss_ma = 0.0; train_ma = [0.0]*4 # accuracy, precision, recall, F1
 
-loss_vec = []
-train_vec = []
-test_vec = []
-test_acc = []
+loss_vec = [0.0]*num_steps
+train_vec = [[0.0]*4*num_steps # will record accuracy, precision, recall, F1
+#deve_vec = [[0.0]*4*num_steps
 
-num_steps =  5000
-print_freq = round(num_steps / 10.0)
+print_freq = num_steps//10
 
-xy_test_dict = {x_data:x_vals_test, y_trgt:y_vals_test}
+for i in range(num_steps):
+  # get this minibatch
+  rand_x = x_vals_train[batchIndxs[i]]
+  rand_y = y_vals_train[batchIndxs[i]]   
+  # train on this batch, and record loss on it
+  xy_dict = {x_data:rand_x, y_trgt:rand_y}
+    
+  # Note that the first report is after the first training step
+  sess.run(train_step, feed_dict=xy_dict)
+  
+  tmp_loss = sess.run(loss, feed_dict=xy_dict)
+  loss_ma = kl.smooth(loss_ma, tmp_loss, theta, (0 == i))
+  loss_vec[i]=loss_ma
+    
+  # record performance metrics over current minibatch
+  tmp_acc_train = sess.run(accuracy, feed_dict=xy_dict)
+  train_ma[0] = kl.smooth(train_ma[0], tmp_acc_train, theta, (0 == i))
+  tmp_pre_train = sess.run(precision, feed_dict=xy_dict)
+  train_ma[1] = kl.smooth(train_ma[1], tmp_pre_train, theta, (0 == i))
+  tmp_rec_train = sess.run(recall, feed_dict=xy_dict)
+  train_ma[2] = kl.smooth(train_ma[2], tmp_rec_train, theta, (0 == i))
+  tmp_f1s_train = sess.run(F1, feed_dict=xy_dict)
+  train_ma[3] = kl.smooth(train_ma[3], tmp_f1s_train, theta, (0 == i))
+  #tmp_acc_train = kl.log_odds(tmp_acc_train) 
+  train_vec[i] = train_ma
+    
+#  # record performance metrics over dev set
+#  tmp_acc_deve = sess.run(accuracy, feed_dict=xy_dict)
+#  deve_ma[0] = kl.smooth(deve_ma[0], tmp_acc_deve, theta, (0 == i))
+#  tmp_pre_deve = sess.run(precision, feed_dict=xy_dict)
+#  deve_ma[1] = kl.smooth(deve_ma[1], tmp_pre_deve, theta, (0 == i))
+#  tmp_rec_deve = sess.run(recall, feed_dict=xy_dict)
+#  deve_ma[2] = kl.smooth(deve_ma[2], tmp_rec_deve, theta, (0 == i))
+#  tmp_f1s_deve = sess.run(F1, feed_dict=xy_dict)
+#  deve_ma[3] = kl.smooth(deve_ma[3], tmp_f1s_deve, theta, (0 == i))
+#  #tmp_acc_deve = kl.log_odds(tmp_acc_deve) 
+#  deve_vec[i] = deve_ma
 
-for i in range(num_steps+1):
-    #rand_indices = random.sample(range(num_train_rows), batch_size)
-    #rand_x = x_vals_train[rand_indices]
-    #rand_y = y_vals_train[rand_indices]
     
-    #print("rand_x shape: %s" % str(rand_x.shape))
-    #print("rand_y shape: %s" % str(rand_y.shape))
-    
-    
-    #print("x_data shape: %s" % str(x_data.shape))
-    #print("y_trgt shape: %s" % str(y_trgt.shape))
-    
-    # train on this batch, and record loss on it
-    #xy_dict = {x_data:rand_x, y_trgt:rand_y}
-    
-    # Note that the first report is after the first training step
-    sess.run(train_step, feed_dict=xy_dict)
-    
-    tmp_loss = sess.run(loss, feed_dict=xy_dict)
-    loss_ma = kl.smooth(loss_ma, tmp_loss, theta, (0 == i))
-    loss_vec.append(loss_ma)
-    
-    # record accuracy over current training set
-    tmp_acc_train = sess.run(accuracy, feed_dict=xy_dict)
-    tmp_acc_train = kl.log_odds(tmp_acc_train) 
-    train_ma = kl.smooth(train_ma, tmp_acc_train, theta, (0 == i))
-    train_vec.append(train_ma)
-    
-    # record accuracy over the etire test set
-    test_acc.append(sess.run(accuracy,feed_dict = xy_test_dict))
-    test_v = kl.log_odds(test_acc[-1])
-    test_ma = kl.smooth(test_ma, test_v, theta, (0 == i))
-    test_vec.append(test_ma)
-    
-    # record accuracy over random part of test set
-#    num_tmp_test = int(num_test_rows/100.0)
-#    rand_indices = random.sample(range(num_test_rows), num_tmp_test)
-#    rand_x = x_vals_test[rand_indices]
-#    rand_y = y_vals_test[rand_indices]
-#    tmp_acc_test = sess.run(accuracy, feed_dict={x_data:rand_x, y_trgt:rand_y})
-#    tmp_acc_test = kl.log_odds(tmp_acc_test)
-#    test_ma = kl.smooth(test_ma, tmp_acc_test, theta, (0 == i))
-#    test_vec.append(test_ma)
-    
-    if (0 == i % print_freq): 
-        print("Smoothed step %u/%u, train batch loss: %.4f, train batch acc: %.4f, Test acc: %.4f" % 
-              (i, num_steps, loss_ma, train_ma, test_ma))
-        
-    #sess.run(train_step, feed_dict=xy_dict)
+  if (0 == i % print_freq): 
+    print("Smoothed step %u/%u, train batch loss: %0.4f, train batch perf: acc=%0.4f,pre=%0.4f,rec=%0.4f,F1=%0.4f"% 
+        (i+1, num_steps, loss_ma, *train_ma))
 
 # ---------------------------------------------
+# compute and display the same for the dev set
+print('Computing Dev Set Performance Metrics...')
+xy_dict = {x_data:x_vals_deve, y_trgt:y_vals_deve}
+acc_deve = sess.run(accuracy, feed_dict=xy_dict)
+pre_deve = sess.run(precision, feed_dict=xy_dict)
+rec_deve = sess.run(recall, feed_dict=xy_dict)
+f1s_deve = sess.run(F1, feed_dict=xy_dict)
+#%%
+# display final training set  performance metrics
+print('Final Training Set Performance')
+print('\tAccuracy = 0.4f%'%train_vec[-1][0])
+print('\tPrecision = 0.4f%'%train_vec[-1][1])
+print('\tRecall = 0.4f%'%train_vec[-1][2])
+print('\tF1 = 0.4f%'%train_vec[-1][3])
+
+# display final dev set  performance metrics
+print('Final Dev Set Performance')
+print('\tAccuracy = 0.4f%'%acc_deve)
+print('\tPrecision = 0.4f%'%pre_deve)
+print('\tRecall = 0.4f%'%rec_deve)
+print('\tF1 = 0.4f%'%f1s_deve)
+    
 #%%
 # Now that all processing is finished, try to save the results
 # https://stackoverflow.com/questions/33759623/tensorflow-how-to-save-restore-a-model
@@ -295,30 +310,22 @@ saver.save(sess, 'log/'+log_file_name, global_step=num_steps)
 # ---------------------------------------------
 #%%
 # Display performance plots
-
+# loss
 plt.plot(loss_vec, 'k-')
 plt.title('Cross Entropy Loss vs Generation')
 plt.xlabel('Generation')
-plt.ylabel('Cross Entropy Loss')
+plt.ylabel('Cross Entropy Loss, EMA')
 plt.show()
+plt.savefig('log/'+log_file_name+'_loss'+'.png')
 
-#print('Final learned parameters')
-#print ('A on ' + str(x_headers) + ': \n' + str(sess.run(A)))
-#print ('b: \n' + str(sess.run(b)))
-
+# classification performances
 plt.figure()
-plt.plot(train_vec, 'b-', label='Train batch')
-plt.plot(test_vec, 'r-', label='Test set')
-plt.title('Log-Odds Accuracy vs Generation')
+plt.plot(train_vec)
 plt.xlabel('Generation')
-plt.ylabel('Log-Odds Accuracy')
-plt.legend(loc='lower right')
+plt.ylabel('Metrics, EMA')
+plt.legend(['Accuracy','Precision','Recall','F1'],loc='upper right')
 plt.show()
-
-plt.figure()
-plt.plot(test_acc)
-plt.title('Test Set Classification Accuracy')
-print('Final Model Test Set Classification Accuracy = %0.2f%%'%(100*test_acc[-1]))
+plt.savefig('log/'+log_file_name+'_perf'+'.png')
 
 # ---------------------------------------------
 #%%
