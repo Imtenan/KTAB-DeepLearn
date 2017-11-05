@@ -39,7 +39,7 @@ import csv
 import matplotlib.pyplot as plt 
 import numpy as np 
 import tensorflow as tf
-#from sklearn import datasets
+from sklearn.model_selection import StratifiedShuffleSplit
 
 
 import klib as kl
@@ -55,7 +55,8 @@ sys.stdout.flush()
 sys.stdout.flush()
 
 #prng_seed = 831931061 # reproducible
-prng_seed = 0         # irreproducible
+#prng_seed = 0         # irreproducible
+prng_seed = 10241227
 kl.set_prngs(prng_seed)
 
 ops.reset_default_graph()
@@ -123,30 +124,25 @@ print('y-shape: ' + str(y_data.shape))
 
 # ---------------------------------------------
 #%%
-# The following is directly adapted from my tfcb-3-d.py
-
-indices = range(0,data_len)
-# split into training and test sets
-test_frac = 0.2
-test_num = round(len(x_data)*test_frac)
-test_indices = random.sample(indices, test_num) # w/o replacement
-num_test_rows = len(test_indices)
-
-train_indices = np.array(list( set(indices) - set(test_indices)))
-num_train_rows = len(train_indices)
-print("num_train_rows: %u, num_test_rows: %u" %(num_train_rows, num_test_rows))
-
+# use sklearn to perform stratified randomized partitioning into training and dev sets
+# this is necessary because the vehicle choice dataset is very unbalanced
+trainPerc = 0.95 # deep learning uses much higher %'s for training
+sss = StratifiedShuffleSplit(n_splits=1, train_size=trainPerc)
+train_indices,test_indices = next(sss.split(x_data, y_data))
+# create the patitions
 x_vals_train = x_data[train_indices]
 y_vals_train = y_data[train_indices]
 
 x_vals_test = x_data[test_indices]
 y_vals_test = y_data[test_indices]
 
+print("num_train_rows: %u, num_test_rows: %u" %(len(train_indices), len(test_indices)))
+
 # ---------------------------------------------
 #%%
 # setup training
 a_stdv = 0.1
-b_stdv = 0.0
+#b_stdv = 0.0 # no longer needed, since bs are now init'd to 0
 learn_rate = 1.0
 beta = 0.0025 #0.001
 
@@ -173,18 +169,16 @@ print("y_trgt shape: %s" % str(y_trgt.shape))
 #%%
 A1 = tf.Variable(tf.random_normal(shape=[layer_0_width, layer_1_width],  mean=0.0, stddev=a_stdv))
 print("A1 shape: %s" % str(A1.shape))
-b1 = tf.Variable(tf.random_normal(shape=[layer_1_width],  mean=0.0, stddev=b_stdv))
+b1 = tf.Variable(tf.zeros(shape=[layer_1_width])) # a 0-rank array?
 print("b1 shape: %s" % str(b1.shape))
-
 out1 =  tf.nn.relu(tf.add(tf.matmul(x_data,A1), b1))
 print("out1 shape: %s" % str(out1.shape))
-
 
 # ---------------------------------------------
 #%%
 A2 = tf.Variable(tf.random_normal(shape=[layer_1_width, layer_2_width],  mean=0.0, stddev=a_stdv))
 print("A2 shape: %s" % str(A2.shape))
-b2 = tf.Variable(tf.random_normal(shape=[layer_2_width],  mean=0.0, stddev=b_stdv))
+b2 = tf.Variable(tf.zeros(shape=[layer_2l_width])) # a 0-rank array?
 print("b2 shape: %s" % str(b2.shape))
 out2 = tf.add(tf.matmul(out1, A2), b2)
 print("out2 shape: %s" % str(out2.shape))
