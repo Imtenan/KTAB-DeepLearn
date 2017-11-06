@@ -132,18 +132,32 @@ a_stdv = 0.1          # standard dev. for initialization of node weights
 learn_rate = 1.0      # gradient descent learning rate
 lambd = 0.5           # rate of normalization of the loss function
 batch_size = 100      # size of mini-batches used in training
-num_steps = 5000      # number training iterations
+num_epochs = 100      # number training iterations
+hidden_layers = 1     # number hidden layers
 
 layer_0_width = num_data_col    # always number of inputs
 layer_1_width = int(2.0*num_choice_col)
 layer_2_width = num_choice_col
 
+with tf.name_scope('HyperParms'):
+  lr = tf.constant(learn_rate)
+  la = tf.constant(lambd)
+  bs = tf.constant(batch_size)
+  ne = tf.constant(num_epochs)
+  dp = tf.constant(devePerc)
+  hl = tf.constant(hidden_layers)
+  # summaries
+  parmSumm = tf.summary.merge([tf.summary.scalar('learn_rate', lr),\
+            tf.summary.scalar('regul_rate', la), tf.summary.scalar('minibatch_size',bs),\
+            tf.summary.scalar('epochs',ne), tf.summary.scalar('dev_set_size',dp),\
+            tf.summary.scalar('hidden_layers',hl)])
+
 # talk some
-print('Hyperparameters\n\tlearning rate: %0.2f\n\tregularization lambda: %0.2f\n\tminibatch_size: %u'\
+print('Hyperparameters\n\tlearning rate: %0.2f\n\tregularization rate: %0.2f\n\tminibatch size: %u'\
       %(learn_rate,lambd,batch_size))
 
 # create the logfile prefix
-log_file_name = 'log_NN%03d_%05d_%s_%d'%(1,num_steps,stime.strftime('%Y%m%d_%H%M%S'),prng_seed)
+log_file_name = 'log_NN%03d_%05d_%s_%d'%(hidden_layers,num_epochs,stime.strftime('%Y%m%d_%H%M%S'),prng_seed)
 
 # ---------------------------------------------
 #%%
@@ -159,7 +173,7 @@ print("y_trgt shape: %s" % str(y_trgt.shape))
 
 # ---------------------------------------------
 #%%
-# FIRST hidden layer
+# FIRST HIDDEN layer
 with tf.name_scope('Layer1'):
   A1 = tf.Variable(tf.random_normal(shape=[layer_0_width, layer_1_width],  mean=0.0, stddev=a_stdv))
   print("A1 shape: %s" % str(A1.shape))
@@ -170,7 +184,7 @@ with tf.name_scope('Layer1'):
 
 # ---------------------------------------------
 #%%
-# SECOND hidden layer
+# OUTPUT layer
 with tf.name_scope('Layer2'):
   A2 = tf.Variable(tf.random_normal(shape=[layer_1_width, layer_2_width],  mean=0.0, stddev=a_stdv))
   print("A2 shape: %s" % str(A2.shape))
@@ -205,11 +219,16 @@ with tf.name_scope('Eval'):
   preSummary = tf.summary.scalar('Precision', precision)
   recSummary = tf.summary.scalar('Recall', recall)
   f1sSummary = tf.summary.scalar('F1',F1)
+  perfSumm = tf.summary.merge([accSummary,preSummary,recSummary,f1sSummary])
 
 # ---------------------------------------------
 #%%
 # finally perform the training simulation
-writer = tf.summary.FileWriter('log/'+log_file_name, sess.graph) 
+# setup for results & model serialization
+writer = tf.summary.FileWriter('log/'+log_file_name, sess.graph)
+writer.add_summary(parmSumm.eval(session=sess))
+devWriter = tf.summary.FileWriter('log/dev/'+log_file_name,sess.graph)
+devWriter.add_summary(parmSumm.eval(session=sess))
 
 sess.run(tf.global_variables_initializer())
 sess.run(tf.local_variables_initializer())
@@ -217,18 +236,18 @@ sess.run(tf.local_variables_initializer())
 saver = tf.train.Saver()
 
 # randomly generate the minibatches all at once
-batchIndxs = np.random.randint(0,num_train_rows,(num_steps,batch_size))
+batchIndxs = np.random.randint(0,num_train_rows,(num_epochs,batch_size))
 
 # set up for moving averages
 theta = 0.010 # weight on new value  - only for printing/plotting MAs
 loss_ma = 0.0; train_ma = [0.0]*4 # accuracy, precision, recall, F1
 
-loss_vec = [0.0]*num_steps
-train_vec = [[0.0]*4 for _ in range(num_steps)] # will record accuracy, precision, recall, F1
+loss_vec = [0.0]*num_epochs
+train_vec = [[0.0]*4 for _ in range(num_epochs)] # will record accuracy, precision, recall, F1
 
-print_freq = num_steps//10
-save_freq = num_steps//5
-for i in range(num_steps):
+print_freq = num_epochs//10   # control console print & checkpoint frequency
+save_freq = num_epochs//5     # control tensorboard save frequency
+for i in range(num_epochs):
   # get this minibatch
   rand_x = x_vals_train[batchIndxs[i],:]
   rand_y = y_vals_train[batchIndxs[i],:]
@@ -258,16 +277,13 @@ for i in range(num_steps):
        
   if (0 == i % print_freq): 
     print("Smoothed step %u/%u, train batch loss: %0.4f\n\ttrain batch perf: acc=%0.4f,pre=%0.4f,rec=%0.4f,F1=%0.4f"% 
-        (i, num_steps, loss_ma, *train_ma))
+        (i, num_epochs, loss_ma, *train_ma))
     # checkpoint progress
     saver.save(sess, 'log/'+log_file_name+'_ckpt', global_step=i)
   if i % save_freq == 0:
     # save summary stats
     writer.add_summary(losSummary.eval(feed_dict=xy_dict, session=sess),i)
-    writer.add_summary(accSummary.eval(feed_dict = yyhat_dict, session=sess), i)
-    writer.add_summary(preSummary.eval(feed_dict = yyhat_dict, session=sess), i)
-    writer.add_summary(recSummary.eval(feed_dict = yyhat_dict, session=sess), i)
-    writer.add_summary(f1sSummary.eval(feed_dict = yyhat_dict, session=sess), i)
+    writer.add_summary(perfSumm.eval(feed_dict = yyhat_dict, session=sess),i)
 
 # ---------------------------------------------
 # compute and display the performance metrics for the dev set
@@ -277,7 +293,9 @@ yyhat_dict = {y_trgt:y_vals_deve, yhat:pred}
 acc_deve = sess.run(accuracy, feed_dict=yyhat_dict)
 pre_deve = sess.run(precision, feed_dict=yyhat_dict)
 rec_deve = sess.run(recall, feed_dict=yyhat_dict)
-f1s_deve = 2*(pre_deve*rec_deve)/(pre_deve+rec_deve)
+f1s_deve = sess.run(F1,feed_dict=yyhat_dict)
+# save the dev set results separately
+devWriter.add_summary(perfSumm.eval(feed_dict = yyhat_dict,session=sess),i+1)
 #%%
 # display final training set  performance metrics
 print('Final Training Set Performance')
@@ -293,46 +311,34 @@ print('\tPrecision = %0.4f'%pre_deve)
 print('\tRecall = %0.4f'%rec_deve)
 print('\tF1 = %0.4f'%f1s_deve)
 
-#%%
-# Now that all processing is finished, try to save the results
-# https://stackoverflow.com/questions/33759623/tensorflow-how-to-save-restore-a-model
-# https://www.tensorflow.org/programmers_guide/variables
-# https://www.tensorflow.org/versions/r0.12/api_docs/python/state_ops/saving_and_restoring_variables
-
-# Actually save the graph, tagging the file names with the step number.
-# This saves in several files, e.g.
-#    logit_model-2500.data-00000-of-00001
-#    logit_model-2500.index
-#    logit_model-2500.meta
-
-saver.save(sess, 'log/'+log_file_name+'_final')
 # ---------------------------------------------
 #%%
-# Display performance plots
+# Display performance plots - no longer need these because it's in tensorboard now
 # loss
-plt.plot(loss_vec, 'k-')
-plt.title('Smoothed Cross Entropy Loss')
-plt.xlabel('Generation')
-plt.ylabel('Cross Entropy Loss, EMA')
-plt.show()
-plt.savefig('log/'+log_file_name+'_loss'+'.png')
-
-# classification performances
-plt.figure()
-plt.plot(train_vec)
-plt.title('Smoothed Performance Metrics')
-plt.xlabel('Generation')
-plt.ylabel('Metrics, EMA')
-plt.legend(['Accuracy','Precision','Recall','F1'],loc='lower right')
-plt.show()
-plt.savefig('log/'+log_file_name+'_perf'+'.png')
+#plt.plot(loss_vec, 'k-')
+#plt.title('Smoothed Cross Entropy Loss')
+#plt.xlabel('Generation')
+#plt.ylabel('Cross Entropy Loss, EMA')
+#plt.show()
+#plt.savefig('log/'+log_file_name+'_loss'+'.png')
+#
+## classification performances
+#plt.figure()
+#plt.plot(train_vec)
+#plt.title('Smoothed Performance Metrics')
+#plt.xlabel('Generation')
+#plt.ylabel('Metrics, EMA')
+#plt.legend(['Accuracy','Precision','Recall','F1'],loc='lower right')
+#plt.show()
+#plt.savefig('log/'+log_file_name+'_perf'+'.png')
 
 # ---------------------------------------------
 #%%
 # close out the session and save the event-files
-writer.close()
-# ---------------------------------------------
-#%%
+writer.close(); devWriter.close()
+# serialize final model results
+saver.save(sess, 'log/'+log_file_name+'_final')
+
 sys.stdout.flush()
 print('')
 etime = datetime.datetime.now()
@@ -341,7 +347,6 @@ print ("Python run end time: " + etime.strftime("%Y-%m-%d %H:%M:%S") )
 print ("Python elapsed time: " + str(dtime))
 print('Outputs saved with prefix: ./log/%s'%log_file_name)
 sys.stdout.flush()
-
 # ---------------------------------------------
 # Copyright KAPSARC. Open source MIT License.
 # ---------------------------------------------
