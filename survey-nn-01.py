@@ -31,19 +31,14 @@
 # ---------------------------------------------
 
 import sys 
-import datetime
-
 import csv
-
 import matplotlib.pyplot as plt 
 import numpy as np 
 import tensorflow as tf
-from sklearn.model_selection import StratifiedShuffleSplit
-
-
-import klib as kl
-
 from tensorflow.python.framework import ops
+from sklearn.model_selection import StratifiedShuffleSplit
+import datetime
+import klib as kl
 
 # ---------------------------------------------
 #%%
@@ -54,19 +49,15 @@ sys.stdout.flush()
 sys.stdout.flush()
 
 #prng_seed = 831931061 # reproducible
-#prng_seed = 0         # irreproducible
-prng_seed = 10241227
-kl.set_prngs(prng_seed)
+prng_seed = 0         # irreproducible
+#prng_seed = 10241227
+prng_seed = kl.set_prngs(prng_seed)
 
 ops.reset_default_graph()
 sess = tf.Session()
 
 # ---------------------------------------------
 #%%
-# start recording for TensorBoard
-log_file_name = 'log-'+str(prng_seed)
-writer = tf.summary.FileWriter('log/'+log_file_name, sess.graph) 
-
 csv_file_name = 'tmp_survey2.csv'
 csvfile = open(csv_file_name, newline='')
 print('opened ' + csv_file_name)
@@ -151,13 +142,17 @@ layer_2_width = num_choice_col
 print('Hyperparameters\n\tlearning rate: %0.2f\n\tregularization lambda: %0.2f\n\tminibatch_size: %u'\
       %(learn_rate,lambd,batch_size))
 
+# create the logfile prefix
+log_file_name = 'log_NN%03d_%05d_%s_%d'%(1,num_steps,stime.strftime('%Y%m%d_%H%M%S'),prng_seed)
+
 # ---------------------------------------------
 #%%
 # number of rows could be batch_size, num_rows_train, or num_rows_deve.
 # So we mark it as None, which really means variable-size
-x_data = tf.placeholder(shape=[None, num_data_col], dtype=tf.float32)
-y_trgt = tf.placeholder(shape=[None, num_choice_col], dtype=tf.float32)
-yhat = tf.placeholder(shape=[None, num_choice_col], dtype=tf.float32)
+with tf.name_scope('Input'):
+  x_data = tf.placeholder(shape=[None, num_data_col], dtype=tf.float32)
+  y_trgt = tf.placeholder(shape=[None, num_choice_col], dtype=tf.float32)
+  yhat = tf.placeholder(shape=[None, num_choice_col], dtype=tf.float32)
 
 print("x_data shape: %s" % str(x_data.shape))
 print("y_trgt shape: %s" % str(y_trgt.shape))
@@ -165,7 +160,7 @@ print("y_trgt shape: %s" % str(y_trgt.shape))
 # ---------------------------------------------
 #%%
 # FIRST hidden layer
-with tf.name_scope('NN'):
+with tf.name_scope('Layer1'):
   A1 = tf.Variable(tf.random_normal(shape=[layer_0_width, layer_1_width],  mean=0.0, stddev=a_stdv))
   print("A1 shape: %s" % str(A1.shape))
   b1 = tf.Variable(tf.zeros(shape=[layer_1_width])) # a 0-rank array?
@@ -176,7 +171,7 @@ with tf.name_scope('NN'):
 # ---------------------------------------------
 #%%
 # SECOND hidden layer
-with tf.name_scope('NN'):
+with tf.name_scope('Layer2'):
   A2 = tf.Variable(tf.random_normal(shape=[layer_1_width, layer_2_width],  mean=0.0, stddev=a_stdv))
   print("A2 shape: %s" % str(A2.shape))
   b2 = tf.Variable(tf.zeros(shape=[layer_2_width])) # a 0-rank array?
@@ -190,6 +185,7 @@ with tf.name_scope('NN'):
 # logits are in (-inf, +inf)
 with tf.name_scope('Loss'):
   loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels = y_trgt, logits = out2))
+  losSummary = tf.summary.scalar('Loss', loss)
 
 with tf.name_scope('Train'):
   regularizer =  tf.add(tf.nn.l2_loss(A1), tf.nn.l2_loss(A2))
@@ -201,16 +197,20 @@ with tf.name_scope('Train'):
 # record standard classification performance metrics
 with tf.name_scope('Eval'):
   _,accuracy = tf.metrics.accuracy(y_trgt,yhat)
-  _,recall = tf.metrics.recall(y_trgt,yhat)
   _,precision = tf.metrics.precision(y_trgt,yhat)
-  # define the writer summaries - how do I get one for F1?
-  accSummary = tf.summary.scalar('ACC', accuracy)
-  preSummary = tf.summary.scalar('PRE', precision)
-  recSummary = tf.summary.scalar('REC', recall)
+  _,recall = tf.metrics.recall(y_trgt,yhat)
+  F1 = 2*tf.divide(tf.multiply(precision,recall),tf.add(precision,recall))
+  # define the writer summaries
+  accSummary = tf.summary.scalar('Accuracy', accuracy)
+  preSummary = tf.summary.scalar('Precision', precision)
+  recSummary = tf.summary.scalar('Recall', recall)
+  f1sSummary = tf.summary.scalar('F1',F1)
 
 # ---------------------------------------------
 #%%
 # finally perform the training simulation
+writer = tf.summary.FileWriter('log/'+log_file_name, sess.graph) 
+
 sess.run(tf.global_variables_initializer())
 sess.run(tf.local_variables_initializer())
 # The saver object will save all the variables
@@ -227,7 +227,7 @@ loss_vec = [0.0]*num_steps
 train_vec = [[0.0]*4 for _ in range(num_steps)] # will record accuracy, precision, recall, F1
 
 print_freq = num_steps//10
-print('Training Begun')
+save_freq = num_steps//5
 for i in range(num_steps):
   # get this minibatch
   rand_x = x_vals_train[batchIndxs[i],:]
@@ -251,19 +251,23 @@ for i in range(num_steps):
   train_ma[1] = kl.smooth(train_ma[1], tmp_pre_train, theta, (0 == i))
   tmp_rec_train = sess.run(recall, feed_dict=yyhat_dict)
   train_ma[2] = kl.smooth(train_ma[2], tmp_rec_train, theta, (0 == i))
-  tmp_f1s_train = 2*(train_ma[1]*train_ma[2])/(train_ma[1]+train_ma[2])
+  tmp_f1s_train = sess.run(F1,feed_dict=yyhat_dict)
   train_ma[3] = kl.smooth(train_ma[3], tmp_f1s_train, theta, (0 == i))
   #tmp_acc_train = kl.log_odds(tmp_acc_train) 
   train_vec[i] = train_ma.copy()
        
   if (0 == i % print_freq): 
-    print("Smoothed step %u/%u, train batch loss: %0.4f, train batch perf: acc=%0.4f,pre=%0.4f,rec=%0.4f,F1=%0.4f"% 
-        (i+1, num_steps, loss_ma, *train_ma))
+    print("Smoothed step %u/%u, train batch loss: %0.4f\n\ttrain batch perf: acc=%0.4f,pre=%0.4f,rec=%0.4f,F1=%0.4f"% 
+        (i, num_steps, loss_ma, *train_ma))
+    # checkpoint progress
+    saver.save(sess, 'log/'+log_file_name+'_ckpt', global_step=i)
+  if i % save_freq == 0:
     # save summary stats
-    writer.add_summary(accSummary.eval(feed_dict = yyhat_dict,session=sess), i)
-    writer.add_summary(preSummary.eval(feed_dict = yyhat_dict,session=sess), i)
-    writer.add_summary(recSummary.eval(feed_dict = yyhat_dict,session=sess), i)
-    # might want to consider checkpointing somewhere like here
+    writer.add_summary(losSummary.eval(feed_dict=xy_dict, session=sess),i)
+    writer.add_summary(accSummary.eval(feed_dict = yyhat_dict, session=sess), i)
+    writer.add_summary(preSummary.eval(feed_dict = yyhat_dict, session=sess), i)
+    writer.add_summary(recSummary.eval(feed_dict = yyhat_dict, session=sess), i)
+    writer.add_summary(f1sSummary.eval(feed_dict = yyhat_dict, session=sess), i)
 
 # ---------------------------------------------
 # compute and display the performance metrics for the dev set
@@ -288,7 +292,7 @@ print('\tAccuracy = %0.4f'%acc_deve)
 print('\tPrecision = %0.4f'%pre_deve)
 print('\tRecall = %0.4f'%rec_deve)
 print('\tF1 = %0.4f'%f1s_deve)
-    
+
 #%%
 # Now that all processing is finished, try to save the results
 # https://stackoverflow.com/questions/33759623/tensorflow-how-to-save-restore-a-model
@@ -301,13 +305,13 @@ print('\tF1 = %0.4f'%f1s_deve)
 #    logit_model-2500.index
 #    logit_model-2500.meta
 
-saver.save(sess, 'log/'+log_file_name, global_step=num_steps-1)
+saver.save(sess, 'log/'+log_file_name+'_final')
 # ---------------------------------------------
 #%%
 # Display performance plots
 # loss
 plt.plot(loss_vec, 'k-')
-plt.title('Cross Entropy Loss vs Generation')
+plt.title('Smoothed Cross Entropy Loss')
 plt.xlabel('Generation')
 plt.ylabel('Cross Entropy Loss, EMA')
 plt.show()
@@ -316,9 +320,10 @@ plt.savefig('log/'+log_file_name+'_loss'+'.png')
 # classification performances
 plt.figure()
 plt.plot(train_vec)
+plt.title('Smoothed Performance Metrics')
 plt.xlabel('Generation')
 plt.ylabel('Metrics, EMA')
-plt.legend(['Accuracy','Precision','Recall','F1'],loc='upper right')
+plt.legend(['Accuracy','Precision','Recall','F1'],loc='lower right')
 plt.show()
 plt.savefig('log/'+log_file_name+'_perf'+'.png')
 
@@ -334,6 +339,7 @@ etime = datetime.datetime.now()
 dtime = etime - stime
 print ("Python run end time: " + etime.strftime("%Y-%m-%d %H:%M:%S") )
 print ("Python elapsed time: " + str(dtime))
+print('Outputs saved with prefix: ./log/%s'%log_file_name)
 sys.stdout.flush()
 
 # ---------------------------------------------

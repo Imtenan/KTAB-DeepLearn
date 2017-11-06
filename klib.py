@@ -7,46 +7,33 @@
 #
 #
 # ---------------------------------------------
-import random
+#import random
 import numpy as np 
 import tensorflow as tf
 
-#import sys 
-#import datetime
-
-#import csv
-
-#import matplotlib.pyplot as plt 
-
-#from sklearn import datasets
-
-#from tensorflow.python.framework import ops 
-
-
 # ---------------------------------------------
 #%%
-
 def set_prngs (s = 0):
     prng_seed = s
     if (0 == s):
-        random.seed() # irreproducible 
+        #random.seed() # irreproducible 
+        np.random.seed()
         seed_min = 100000000.0
         seed_max = 999999999.9
-        prng_seed = round(random.uniform(seed_min, seed_max))
+        #prng_seed = round(random.uniform(seed_min, seed_max))
+        prng_seed = np.random.randint(seed_min,seed_max+1)
     
     #prng_seed = 615904 # reproducible 
     
     print('prng_seed: '+str(prng_seed)) 
     # Need to set all three PRNGs
-    random.seed(prng_seed)
+    #random.seed(prng_seed)
     tf.set_random_seed(prng_seed)
     np.random.seed(prng_seed)
     return prng_seed
 
 # ---------------------------------------------
 #%%
-
-
 def smooth(ema, x, t, initP): # classic exponential moving average
     if initP:
         s = x
@@ -73,7 +60,6 @@ def log_odds(p, n=2.0):
 
 # ---------------------------------------------
 #%%
-
 # fill it with U[vmin, vmax] values
 def uniform_tensor (shape, vmin = -1.0, vmax = +1.0):
     num_el = np.product(shape)
