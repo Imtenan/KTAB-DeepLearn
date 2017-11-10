@@ -29,8 +29,8 @@
 #
 # Note: the loss function is currently the sigmoid cross entropy of the final
 # layer, while I suspect it should be the softmax cross entropy.  Optimization
-# is with GradientDescent, but intend to try ADAM optimization also. Dropout is
-# *not* currently used.
+# is with GradientDescent, but intend to try momentum or ADAM optimization also.
+# Dropout is *not* currently used.
 #
 # ---------------------------------------------
 
@@ -182,9 +182,9 @@ log_file_name = 'log_NN%03d_%05d_%s_%d'%(hidden_layers,num_epochs,stime.strftime
 # number of rows could be batch_size, num_rows_train, or num_rows_deve.
 # So we mark it as None, which really means variable-size
 with tf.name_scope('Input'):
-  x_data = tf.placeholder(shape=[None, num_data_col], dtype=tf.float32)
-  y_trgt = tf.placeholder(shape=[None, num_choice_col], dtype=tf.float32)
-  yhat = tf.placeholder(shape=[None, num_choice_col], dtype=tf.float32)
+  x_data = tf.placeholder(shape=[None, num_data_col], dtype=tf.float32,name='X')
+  y_trgt = tf.placeholder(shape=[None, num_choice_col], dtype=tf.float32,name='Y')
+  yhat = tf.placeholder(shape=[None, num_choice_col], dtype=tf.float32,name='Yhat')
 
 print("x_data shape: %s" % str(x_data.shape))
 print("y_trgt shape: %s" % str(y_trgt.shape))
@@ -199,20 +199,23 @@ layerActivs = [0.0]*(hidden_layers+2) #[0] is an unused placeholder for the data
 for i in lRng:
   with tf.name_scope('Layer%d'%i):
     # create the variables for the node parameters
-    layerParams['A'][i] = tf.Variable(tf.random_normal(shape=[layerWidths[i-1], layerWidths[i]]\
-               ,  mean=0.0, stddev=a_stdv))
-    layerParams['b'][i] = tf.Variable(tf.zeros(shape=[layerWidths[i]])) # a 0-rank array?
+    layerParams['A'][i] = tf.Variable(tf.random_normal(shape=[layerWidths[i-1],\
+                layerWidths[i]], mean=0.0, stddev=a_stdv),name='A')
+    layerParams['b'][i] = tf.Variable(tf.zeros(shape=[layerWidths[i]]),name='b') # a 0-rank array?
     print('A%d shape: %s, b%d shape: %s'%(i,layerParams['A'][i].shape,i,layerParams['b'][i].shape))
     # create the 'variable' for the layer output
     if i == 1:
       # first layer, so input is the data
-      layerActivs[i] = tf.nn.relu(tf.add(tf.matmul(x_data,layerParams['A'][i]), layerParams['b'][i]))
+      layerActivs[i] = tf.nn.relu(tf.add(tf.matmul(x_data,layerParams['A'][i]),\
+                 layerParams['b'][i]))
     elif i == (hidden_layers+1):
       # last layer, so no activation function
-      layerActivs[i] =  tf.add(tf.matmul(layerActivs[i-1], layerParams['A'][i]), layerParams['b'][i])
+      layerActivs[i] =  tf.add(tf.matmul(layerActivs[i-1], layerParams['A'][i]),\
+                 layerParams['b'][i])
     else:
       # hidden layer, so apply the activation function
-      layerActivs[i] = tf.nn.relu(tf.add(tf.matmul(layerActivs[i-1],layerParams['A'][i]), layerParams['b'][i]))
+      layerActivs[i] = tf.nn.relu(tf.add(tf.matmul(layerActivs[i-1],layerParams['A'][i]),\
+                 layerParams['b'][i]))
     print('Activ%d shape: %s'%(i,layerActivs[i].shape))
 
 # ---------------------------------------------
