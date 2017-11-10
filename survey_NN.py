@@ -252,8 +252,7 @@ writer.add_summary(parmSumm.eval(session=sess))
 devWriter = tf.summary.FileWriter(os.getcwd()+'/log/dev/'+log_file_name,sess.graph)
 devWriter.add_summary(parmSumm.eval(session=sess))
 
-sess.run(tf.global_variables_initializer())
-sess.run(tf.local_variables_initializer())
+sess.run([tf.global_variables_initializer(),tf.local_variables_initializer()])
 # The saver object will save all the variables
 saver = tf.train.Saver()
 
@@ -275,26 +274,19 @@ for i in range(num_epochs):
   rand_y = y_vals_train[batchIndxs[i],:]
   # train on this batch, and record loss on it
   xy_dict = {x_data:rand_x, y_trgt:rand_y}
-    
-  # Note that the first report is after the first training step
-  sess.run(train_step, feed_dict=xy_dict)
   
-  tmp_loss = sess.run(loss, feed_dict=xy_dict)
-  loss_ma = kl.smooth(loss_ma, tmp_loss, theta, (0 == i))
-  loss_vec[i]=loss_ma
-    
-  # record performance metrics over current minibatch
-  pred = sess.run(tf.round(tf.sigmoid(layerActivs[-1])), feed_dict = xy_dict)
-  yyhat_dict = {y_trgt:rand_y, yhat:pred}
-  tmp_acc_train = sess.run(accuracy, feed_dict=yyhat_dict)
+  # train, get the loss & it's summary, and predictions
+  _,tmp_loss,pred = sess.run([train_step,loss,tf.round(tf.sigmoid(layerActivs[-1]))],\
+      feed_dict = xy_dict)
+  xy_dict[yhat] = pred
+  # compute the evaulation metrics
+  tmp_acc_train,tmp_pre_train,tmp_rec_train,tmp_f1s_train = sess.run(\
+      [accuracy,precision,recall,F1], xy_dict)
+  # smooth it all
   train_ma[0] = kl.smooth(train_ma[0], tmp_acc_train, theta, (0 == i))
-  tmp_pre_train = sess.run(precision, feed_dict=yyhat_dict)
   train_ma[1] = kl.smooth(train_ma[1], tmp_pre_train, theta, (0 == i))
-  tmp_rec_train = sess.run(recall, feed_dict=yyhat_dict)
   train_ma[2] = kl.smooth(train_ma[2], tmp_rec_train, theta, (0 == i))
-  tmp_f1s_train = sess.run(F1,feed_dict=yyhat_dict)
   train_ma[3] = kl.smooth(train_ma[3], tmp_f1s_train, theta, (0 == i))
-  #tmp_acc_train = kl.log_odds(tmp_acc_train) 
   train_vec[i] = train_ma.copy()
        
   if (0 == i % print_freq): 
@@ -304,20 +296,21 @@ for i in range(num_epochs):
     saver.save(sess, os.getcwd()+'/log/'+log_file_name+'_ckpt', global_step=i)
   if i % save_freq == 0:
     # save summary stats
-    writer.add_summary(losSummary.eval(feed_dict=xy_dict, session=sess),i)
-    writer.add_summary(perfSumm.eval(feed_dict = yyhat_dict, session=sess),i)
+    l,p = sess.run([losSummary,perfSumm], xy_dict)
+    writer.add_summary(l,i)
+    writer.add_summary(p,i)
 
 # ---------------------------------------------
 # compute and display the performance metrics for the dev set
+xy_dict = {x_data:x_vals_deve, y_trgt:y_vals_deve}
 print('Computing Dev Set Performance Metrics...')
-pred = sess.run(tf.round(tf.sigmoid(layerActivs[-1])), feed_dict = {x_data:x_vals_deve, y_trgt:y_vals_deve})
-yyhat_dict = {y_trgt:y_vals_deve, yhat:pred}
-acc_deve = sess.run(accuracy, feed_dict=yyhat_dict)
-pre_deve = sess.run(precision, feed_dict=yyhat_dict)
-rec_deve = sess.run(recall, feed_dict=yyhat_dict)
-f1s_deve = sess.run(F1,feed_dict=yyhat_dict)
-# save the dev set results separately
-devWriter.add_summary(perfSumm.eval(feed_dict = yyhat_dict,session=sess),i+1)
+pred = sess.run(tf.round(tf.sigmoid(layerActivs[-1])), xy_dict)
+xy_dict[yhat] = pred
+acc_deve,pre_deve,rec_deve,f1s_deve,summ = sess.run([accuracy,precision,\
+                                                     recall,F1,perfSumm],xy_dict)
+# save the summary stats
+devWriter.add_summary(summ,i+1)
+
 #%%
 # display final training set performance metrics
 print('Final Training Set Performance')
@@ -366,6 +359,7 @@ plt.savefig(os.getcwd()+'/out/'+log_file_name+'_perf'+'.png')
 writer.close(); devWriter.close()
 # serialize final model results
 saver.save(sess, os.getcwd()+'/log/'+log_file_name+'_final')
+sess.close()
 
 sys.stdout.flush()
 print('')
