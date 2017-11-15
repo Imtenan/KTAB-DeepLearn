@@ -358,14 +358,34 @@ for i in range(num_epochs):
 
 # ---------------------------------------------
 # compute and display the performance metrics for the dev set
-#xy_dict = {x_data:x_vals_deve, y_trgt:y_vals_deve}
-#print('Computing Dev Set Performance Metrics...')
-#pred = sess.run(tf.round(tf.sigmoid(layerActivs[-1])), xy_dict)
-#xy_dict[yhat] = pred
-#acc_deve,pre_deve,rec_deve,f1s_deve,summ = sess.run([accuracy,precision,\
-#                                                     recall,F1,perfSumm],xy_dict)
-## save the summary stats
-#devWriter.add_summary(summ,i+1)
+print('Computing Dev Set Performance Metrics...')
+if num_cdmp_actors > 0:
+  # get the number of rows short of an even number of batches
+  rowsToAdd = batch_size - (x_vals_deve.shape[0] % batch_size)
+  if (rowsToAdd > 0) and (rowsToAdd != 100):
+    batchesX = np.r_[x_vals_deve,x_vals_deve[-rowsToAdd:,:]]
+    batchesY = np.r_[y_vals_deve,y_vals_deve[-rowsToAdd:,:]]
+  else:
+    batchesX = x_vals_deve; batchesY = y_vals_deve
+  # create the minibatches
+  bX = np.split(batchesX,x_vals_deve.shape[0]/batch_size,axis=0)
+  bY = np.split(batchesY,x_vals_deve.shape[0]/batch_size,axis=0)
+  # process the minibatches
+  pred = []
+  for x,y in zip(bX,bY):
+    xy_dict = {x_data:x, y_trgt:y}
+    pred.extend(sess.run(tf.round(tf.sigmoid(layerActivs[-1])), xy_dict))
+  pred = np.r_[pred]
+  # finally build the new dictionary for model evaluation
+  xy_dict = {x_data:x_vals_deve, y_trgt:y_vals_deve, yhat:pred[:(x_vals_deve.shape[0]+1)]}
+else:
+  xy_dict = {x_data:x_vals_deve, y_trgt:y_vals_deve}
+  pred = sess.run(tf.round(tf.sigmoid(layerActivs[-1])), xy_dict)
+  xy_dict[yhat] = pred
+acc_deve,pre_deve,rec_deve,f1s_deve,summ = sess.run([accuracy,precision,\
+                                                     recall,F1,perfSumm],xy_dict)
+# save the summary stats
+devWriter.add_summary(summ,i+1)
 
 #%%
 # display final training set performance metrics
