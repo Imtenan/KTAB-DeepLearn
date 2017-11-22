@@ -56,7 +56,7 @@ sys.stdout.flush()
 
 #prng_seed = 831931061 # reproducible
 #prng_seed = 0         # irreproducible
-prng_seed = 10241227
+prng_seed = 42
 prng_seed = kl.set_prngs(prng_seed)
 
 ops.reset_default_graph()
@@ -148,7 +148,7 @@ a_stdv = 0.1          # standard dev. for initialization of node weights
 learn_rate = 1.0      # gradient descent learning rate
 lambd = 0.5           # rate of normalization of the loss function
 batch_size = 100      # size of mini-batches used in training
-num_epochs = 100      # number training iterations
+num_epochs = 2500      # number training iterations
 
 # nodes per layer - first is the number of features, last is always the number
 # of categories C being predicted
@@ -286,6 +286,8 @@ for i in range(num_epochs):
   tmp_acc_train,tmp_pre_train,tmp_rec_train,tmp_f1s_train = sess.run(\
       [accuracy,precision,recall,F1], xy_dict)
   # smooth it all
+  loss_ma = kl.smooth(loss_ma, tmp_loss, theta, (0 == i))
+  loss_vec[i]=loss_ma
   train_ma[0] = kl.smooth(train_ma[0], tmp_acc_train, theta, (0 == i))
   train_ma[1] = kl.smooth(train_ma[1], tmp_pre_train, theta, (0 == i))
   train_ma[2] = kl.smooth(train_ma[2], tmp_rec_train, theta, (0 == i))
