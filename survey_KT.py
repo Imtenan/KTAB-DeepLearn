@@ -25,7 +25,7 @@
 #
 # Neural net to learn one-hot encoding, with a variable number of hidden layers
 # tunable hyperparameters are: learning rate, regularization rate, minibatch size
-# hidden layers, and hidden layer(s) width
+# number of hidden layers, and hidden layer(s) width
 #
 # Note: the loss function is currently the sigmoid cross entropy of the final
 # layer, while I suspect it should be the softmax cross entropy.  Optimization
@@ -48,9 +48,9 @@ import klib as kl
 
 
 ''' RUN THE NEURAL NETWORK '''
-def RunNN(prng_seed = 0, csv_file_name, trainPerc = 0.95, devePerc = 0.05, \
-          learn_rate = 1.0, lambd = 0.5, batch_size = 100, num_epochs = 2500\
-          num_cdmp_actors = 4, hiddenLayerWs):
+def RunNN(csv_file_name, prng_seed = 0, trainPerc = 0.95, devePerc = 0.05, \
+          learn_rate = 1.0, lambd = 0.5, batch_size = 100, num_epochs = 2500,\
+          num_cdmp_actors = 4, hiddenLayerWs = [100,100]):
   # ---------------------------------------------
   #%%
   sys.stdout.flush()
@@ -170,7 +170,7 @@ def RunNN(prng_seed = 0, csv_file_name, trainPerc = 0.95, devePerc = 0.05, \
               tf.summary.scalar('hidden_layers',hl), tf.summary.scalar('num_cdmp_actors',mt)])
   
   # talk some
-  print('Hyperparameters\n\tlearning rate: %0.2f\n\tregularization rate: %0.2f\n\tminibatch size: %u\n\tnumber epochs: %d\n\thidden layers: %d(%d)\n\tCDMP actors: %d'\
+  print('Hyperparameters\n\tlearning rate: %0.2f\n\tregularization rate: %0.2f\n\tminibatch size: %u\n\tnumber epochs: %d\n\thidden layers: %d\n\tCDMP actors: %d'\
         %(learn_rate,lambd,batch_size,num_epochs,hidden_layers,num_cdmp_actors))
   
   # create the logfile prefix
@@ -407,6 +407,7 @@ def RunNN(prng_seed = 0, csv_file_name, trainPerc = 0.95, devePerc = 0.05, \
   #%%
   # Display performance plots
   # loss
+  plt.figure()
   plt.plot(loss_vec, 'k-')
   plt.title('Smoothed Cross Entropy Loss')
   plt.xlabel('Generation')
@@ -440,22 +441,68 @@ def RunNN(prng_seed = 0, csv_file_name, trainPerc = 0.95, devePerc = 0.05, \
   print ("Python elapsed time: " + str(dtime))
   print('Outputs saved with prefix: %s'%log_file_name)
   sys.stdout.flush()
+  
+  return [acc_deve, pre_deve, rec_deve, f1s_deve]
+
+def ReadInputs(modelInput):
+  '''
+  Read in from a text file the parameters for a NN run.  There may be parameters
+  for multiple runs.  Format is:
+  first line - integer number of parameter sets in 9 lines per set
+  csv_file_name = string
+  prng_seed = int
+  num_cdmp_actors = int (if 0, non-CDMP is used)
+  num_epochs = int
+  trainPerc, devePerc = two floats which sum to 1
+  batch_size = int
+  learn_rate = float
+  lambd = float
+  hiddenLayerWs = list of ints
+  
+  Returns a list of parameter dicts
+  '''
+  
+  param = {'csv_file_name':None,'prng_seed':None,'num_cdmp_actors':None,\
+            'num_epochs':None,'trainPerc':None,'devePerc':None,\
+            'batch_size':None,'learn_rate':None,'lambd':None,\
+            'hiddenLayerWs':None}
+
+  with open(modelInput,'rt') as f:
+    # first get the number of runs
+    runs = int(f.readline().rstrip('\n'))
+    # read in each set of parameters
+    params = [param.copy() for _ in range(runs)]
+    for i in range(runs):
+      params[i]['csv_file_name'] = f.readline().rstrip('\n')
+      params[i]['prng_seed'] = int(f.readline().rstrip('\n'))
+      params[i]['num_cdmp_actors'] = int(f.readline().rstrip('\n'))
+      params[i]['num_epochs'] = int(f.readline().rstrip('\n'))
+      tmp = list(map(float, f.readline().rstrip('\n').split()))
+      params[i]['trainPerc'] = tmp[0]
+      params[i]['devePerc'] = tmp[1]
+      params[i]['batch_size'] = int(f.readline().rstrip('\n'))
+      params[i]['learn_rate'] = float(f.readline().rstrip('\n'))
+      params[i]['lambd'] = float(f.readline().rstrip('\n'))
+      params[i]['hiddenLayerWs'] = list(map(int, f.readline().rstrip('\n').split()))
+
+  return params
 
 if __name__ == '__main__':
   #prng_seed = 831931061 # reproducible
   #prng_seed = 0         # irreproducible
-  prng_seed = 42
+  #prng_seed = 42
 
-  csv_file_name = 'tmp_survey2.csv'
-
-  trainPerc = 0.95; devePerc = 0.05
-  learn_rate = 1.0      # gradient descent learning rate
-  lambd = 0.5           # rate of normalization of the loss function
-  batch_size = 100      # size of mini-batches used in training
-  num_epochs = 2500      # number training iterations
-  num_cdmp_actors = 4
-
-  hiddenLayerWs = [100]*5
+  # first need to get the model parameters input file
+  modelInput = sys.argv[1]
+  print('Reading model parameters from %s'%modelInput)
+  params = ReadInputs(modelInput)
+  
+  # run the model(s)
+  devSetPerfs = [None]*len(params)
+  for i,p in enumerate(params):
+    devSetPerfs[i] = RunNN(p['csv_file_name'], p['prng_seed'], p['trainPerc'],\
+               p['devePerc'], p['learn_rate'], p['lambd'], p['batch_size'],\
+               p['num_epochs'], p['num_cdmp_actors'], p['hiddenLayerWs'])
 
 # ---------------------------------------------
 # Copyright KAPSARC. Open source MIT License.
