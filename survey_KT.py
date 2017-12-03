@@ -468,6 +468,8 @@ def ReadInputs(modelInput):
             'hiddenLayerWs':None}
 
   with open(modelInput,'rt') as f:
+    # first line is a descriptive comment, so just read it in and print it
+    descrip = f.readline().rstrip('\n')
     # first get the number of runs
     runs = int(f.readline().rstrip('\n'))
     # read in each set of parameters
@@ -485,7 +487,7 @@ def ReadInputs(modelInput):
       params[i]['lambd'] = float(f.readline().rstrip('\n'))
       params[i]['hiddenLayerWs'] = list(map(int, f.readline().rstrip('\n').split()))
 
-  return params
+  return descrip,params
 
 if __name__ == '__main__':
   #prng_seed = 831931061 # reproducible
@@ -495,7 +497,8 @@ if __name__ == '__main__':
   # first need to get the model parameters input file
   modelInput = sys.argv[1]
   print('Reading model parameters from %s'%modelInput)
-  params = ReadInputs(modelInput)
+  descrip,params = ReadInputs(modelInput)
+  print('Running model inputs: %s'%descrip)
   
   # run the model(s)
   devSetPerfs = [None]*len(params)
