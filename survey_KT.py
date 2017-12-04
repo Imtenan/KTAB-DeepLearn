@@ -48,9 +48,12 @@ import klib as kl
 
 
 ''' RUN THE NEURAL NETWORK '''
-def RunNN(csv_file_name, prng_seed = 0, trainPerc = 0.95, devePerc = 0.05, \
-          learn_rate = 1.0, lambd = 0.5, batch_size = 100, num_epochs = 2500,\
-          num_cdmp_actors = 4, hiddenLayerWs = [100,100], optimMeth = 'GD'):
+def RunNN(x_data, y_data, epochs, prng_seed = 0, trainPerc = 0.95, devePerc = 0.05,\
+          learn_rate = 1.0, lambd = 0.5, batch_size = 100, num_cdmp_actors = 4,\
+          hiddenLayerWs = [100,100], optimMeth = 'GD'):
+  # variable counts
+  num_data_col = x_data.shape[1]
+  num_choice_col = y_data.shape[1]
   # ---------------------------------------------
   #%%
   sys.stdout.flush()
@@ -73,57 +76,6 @@ def RunNN(csv_file_name, prng_seed = 0, trainPerc = 0.95, devePerc = 0.05, \
     os.mkdir(os.getcwd()+'/log')
   except FileExistsError:
     pass
-  
-  # ---------------------------------------------
-  #%%
-  csvfile = open(csv_file_name, newline='')
-  print('opened ' + csv_file_name)
-  
-  csv_data = []
-  csv_data_obj = csv.reader(csvfile, delimiter=',', quotechar='|')
-  for row in csv_data_obj:
-      #print(' , '.join(row))
-      csv_data.append(row)
-  
-  # ---------------------------------------------
-  #%%
-  # The data file format will have to be changed to (num_rows, num_data, num_choice)
-  print('csv length: ' + str(len(csv_data)))
-  survey_headers = [int(x) for x in csv_data[0]] # Num rows, cat1, float, cat2, choice
-  
-  num_rows = survey_headers[0]
-  print("expected num_rows: %u" % (num_rows))
-  
-  num_cat1 = survey_headers[1]
-  print("expected num_cat1: %u" % (num_cat1))
-  
-  num_float = survey_headers[2]
-  print("expected num_float: %u" % (num_float))
-  
-  num_cat2 = survey_headers[3]
-  print("expected num_cat2: %u" % (num_cat2))
-  
-  print()
-  num_data_col = num_cat1 + num_float + num_cat2
-  print("expected num_data_col: %u" % (num_data_col))
-  
-  num_choice_col = int(survey_headers[4])
-  print("expected num_choice_col: %u" % (num_choice_col))
-  
-  survey_list = csv_data[1:] # list of lists
-  data_len = len(survey_list)
-  print('survey data length: ' + str(data_len))
-  
-  survey_data = [ [float(x) for x in y] for y in survey_list ]
-  
-  print()
-  x_data = np.array([x[0:num_data_col] for x in survey_data]) # [0,6) == [0,5]
-      
-  y_data = np.array([y[num_data_col:num_data_col+num_choice_col] for y in survey_data])
-  x_headers = [h for h in survey_headers[1:6]]
-  
-  print('x-shape: ' + str(x_data.shape))
-  print('y-shape: ' + str(y_data.shape)) 
   
   # ---------------------------------------------
   #%%
@@ -159,7 +111,7 @@ def RunNN(csv_file_name, prng_seed = 0, trainPerc = 0.95, devePerc = 0.05, \
     lr = tf.constant(learn_rate)
     la = tf.constant(lambd)
     bs = tf.constant(batch_size)
-    ne = tf.constant(num_epochs)
+    ne = tf.constant(epochs['epochMax'])
     dp = tf.constant(devePerc)
     hl = tf.constant(hidden_layers)
     mt = tf.constant(num_cdmp_actors)
@@ -173,10 +125,10 @@ def RunNN(csv_file_name, prng_seed = 0, trainPerc = 0.95, devePerc = 0.05, \
   
   # talk some
   print('Hyperparameters\n\tlearning rate: %0.2f\n\tregularization rate: %0.2f\n\tminibatch size: %u\n\tnumber epochs: %d\n\thidden layers: %d\n\tCDMP actors: %d\n\toptim. method: %s'\
-        %(learn_rate,lambd,batch_size,num_epochs,hidden_layers,num_cdmp_actors,optimMeth))
+        %(learn_rate,lambd,batch_size,epochs['epochMax'],hidden_layers,num_cdmp_actors,optimMeth))
   
   # create the logfile prefix
-  log_file_name = 'log_%s%03d_%s_%05d_%s_%d'%(modelType,hidden_layers,optimMeth,num_epochs,stime.strftime('%Y%m%d_%H%M%S'),prng_seed)
+  log_file_name = 'log_%s%03d_%s_%05d_%s_%d'%(modelType,hidden_layers,optimMeth,epochs['epochMax'],stime.strftime('%Y%m%d_%H%M%S'),prng_seed)
   
   # ---------------------------------------------
   #%%
@@ -315,18 +267,18 @@ def RunNN(csv_file_name, prng_seed = 0, trainPerc = 0.95, devePerc = 0.05, \
   saver = tf.train.Saver()
   
   # randomly generate the minibatches all at once
-  batchIndxs = np.random.randint(0,num_train_rows,(num_epochs,batch_size))
+  batchIndxs = np.random.randint(0,num_train_rows,(epochs['epochMax'],batch_size))
   
   # set up for moving averages
   theta = 0.010 # weight on new value  - only for printing/plotting MAs
   loss_ma = 0.0; train_ma = [0.0]*4 # accuracy, precision, recall, F1
   
-  loss_vec = [0.0]*num_epochs
-  train_vec = [[0.0]*4 for _ in range(num_epochs)] # will record accuracy, precision, recall, F1
+  loss_vec = [0.0]*epochs['epochMax']
+  train_vec = [[0.0]*4 for _ in range(epochs['epochMax'])] # will record accuracy, precision, recall, F1
   
-  print_freq = num_epochs//10   # control console print & checkpoint frequency
-  save_freq = num_epochs//5     # control tensorboard save frequency
-  for i in range(num_epochs):
+  print_freq = epochs['epochMax']//10   # control console print & checkpoint frequency
+  save_freq = epochs['epochMax']//5     # control tensorboard save frequency
+  for i in range(epochs['epochMax']):
     # get this minibatch
     rand_x = x_vals_train[batchIndxs[i],:]
     rand_y = y_vals_train[batchIndxs[i],:]
@@ -351,7 +303,7 @@ def RunNN(csv_file_name, prng_seed = 0, trainPerc = 0.95, devePerc = 0.05, \
          
     if (0 == i % print_freq): 
       print("Smoothed step %u/%u, train batch loss: %0.4f\n\ttrain batch perf: acc=%0.4f,pre=%0.4f,rec=%0.4f,F1=%0.4f"% 
-          (i, num_epochs, loss_ma, *train_ma))
+          (i, epochs['epochMax'], loss_ma, *train_ma))
       # checkpoint progress
       saver.save(sess, os.getcwd()+'/log/'+log_file_name+'_ckpt', global_step=i)
     if i % save_freq == 0:
@@ -359,6 +311,18 @@ def RunNN(csv_file_name, prng_seed = 0, trainPerc = 0.95, devePerc = 0.05, \
       l,p = sess.run([losSummary,perfSumm], xy_dict)
       writer.add_summary(l,i)
       writer.add_summary(p,i)
+      
+    # check for early termination
+    if i > epochs['epochMin']:
+      if abs(loss_vec[i]/loss_vec[i-epochs['epochLB']]-1) <= epochs['convgCrit']:
+        print('Early termination on epoch %d: relative smoothed loss diff. between %0.6f and %0.6f < %0.6f'%\
+              (i,loss_vec[i],loss_vec[i-epochs['epochLB']],epochs['convgCrit']))
+        # if terminating early, save the last status
+        if i% save_freq != 0:
+          l,p = sess.run([losSummary,perfSumm], xy_dict)
+          writer.add_summary(l,i)
+          writer.add_summary(p,i)
+        break
   
   # ---------------------------------------------
   # compute and display the performance metrics for the dev set
@@ -389,15 +353,15 @@ def RunNN(csv_file_name, prng_seed = 0, trainPerc = 0.95, devePerc = 0.05, \
   acc_deve,pre_deve,rec_deve,f1s_deve,summ = sess.run([accuracy,precision,\
                                                        recall,F1,perfSumm],xy_dict)
   # save the summary stats
-  devWriter.add_summary(summ,i+1)
+  devWriter.add_summary(summ,epochs['epochMax']+1)
   
   #%%
   # display final training set performance metrics
   print('Final Training Set Performance')
-  print('\tAccuracy = %0.4f'%train_vec[-1][0])
-  print('\tPrecision = %0.4f'%train_vec[-1][1])
-  print('\tRecall = %0.4f'%train_vec[-1][2])
-  print('\tF1 = %0.4f'%train_vec[-1][3])
+  print('\tAccuracy = %0.4f'%train_vec[i][0])
+  print('\tPrecision = %0.4f'%train_vec[i][1])
+  print('\tRecall = %0.4f'%train_vec[i][2])
+  print('\tF1 = %0.4f'%train_vec[i][3])
   
   # display final dev set performance metrics
   print('Final Dev Set Performance')
@@ -417,7 +381,7 @@ def RunNN(csv_file_name, prng_seed = 0, trainPerc = 0.95, devePerc = 0.05, \
   # Display performance plots
   # loss
   plt.figure()
-  plt.plot(loss_vec, 'k-')
+  plt.plot(loss_vec[:(i+1)], 'k-')
   plt.title('Smoothed Cross Entropy Loss')
   plt.xlabel('Generation')
   plt.ylabel('Cross Entropy Loss, EMA')
@@ -426,7 +390,7 @@ def RunNN(csv_file_name, prng_seed = 0, trainPerc = 0.95, devePerc = 0.05, \
   
   # classification performances
   plt.figure()
-  plt.plot(train_vec)
+  plt.plot(train_vec[:(i+1)])
   plt.title('Smoothed Performance Metrics')
   plt.xlabel('Generation')
   plt.ylabel('Metrics, EMA')
@@ -451,28 +415,75 @@ def RunNN(csv_file_name, prng_seed = 0, trainPerc = 0.95, devePerc = 0.05, \
   print('Outputs saved with prefix: %s'%log_file_name)
   sys.stdout.flush()
   
-  return [acc_deve, pre_deve, rec_deve, f1s_deve]
+  return [loss_vec[:(i+1)],acc_deve, pre_deve, rec_deve, f1s_deve]
+  # ---------------------------------------------
+  #%%
+  
+  
+def ReadData(dataInput):
+  '''
+  Read in the CSV-formatted data text file.  Format is:
+  blah blah blah
+  '''
+  
+  csvfile = open(dataInput, newline='')  
+  csv_data = []
+  csv_data_obj = csv.reader(csvfile, delimiter=',', quotechar='|')
+  for row in csv_data_obj:
+      csv_data.append(row)
+  
+  # read and parse the header row
+  # The data file format will have to be changed to (num_rows, num_data, num_choice)
+  print('csv length: ' + str(len(csv_data)))
+  survey_headers = [int(x) for x in csv_data[0]] # Num rows, cat1, float, cat2, choice
+  num_rows = survey_headers[0]
+  print("expected num_rows: %u" % (num_rows))
+  num_cat1 = survey_headers[1]
+  print("expected num_cat1: %u" % (num_cat1))
+  num_float = survey_headers[2]
+  print("expected num_float: %u" % (num_float))
+  num_cat2 = survey_headers[3]
+  print("expected num_cat2: %u" % (num_cat2))
+  num_data_col = num_cat1 + num_float + num_cat2
+  print("expected num_data_col: %u" % (num_data_col))
+  num_choice_col = int(survey_headers[4])
+  print("expected num_choice_col: %u" % (num_choice_col))
+  
+  # parse data
+  survey_list = csv_data[1:] # list of lists
+  data_len = len(survey_list)
+  print('survey data length: ' + str(data_len))  
+  survey_data = [ [float(x) for x in y] for y in survey_list ]
+  x_data = np.array([x[0:num_data_col] for x in survey_data]) # [0,6) == [0,5]      
+  y_data = np.array([y[num_data_col:num_data_col+num_choice_col] for y in survey_data])
+#  x_headers = [h for h in survey_headers[1:6]] 
+  print('x-shape: ' + str(x_data.shape))
+  print('y-shape: ' + str(y_data.shape)) 
+  
+  return x_data, y_data
 
-def ReadInputs(modelInput):
+
+
+def ReadModel(modelInput):
   '''
   Read in from a text file the parameters for a NN run.  There may be parameters
   for multiple runs.  Format is:
   first line - integer number of parameter sets in 9 lines per set
-  csv_file_name = string
   prng_seed = int
-  num_cdmp_actors = int (if 0, non-CDMP is used)
-  num_epochs = int
+  num_cdmp_actors = int: if 0, non-CDMP is used
+  epochs = [int, int, int, float]: epochMax, epochMin, epochLookback, convgCrit
   trainPerc, devePerc = two floats which sum to 1
   batch_size = int
   learn_rate = float
   lambd = float
   hiddenLayerWs = list of ints
+  optimMeth = string name of optimizer: GD, ADAM, or RMSPROP
   
-  Returns a list of parameter dicts
+  Returns a model runs descriptive text and a list of parameter dicts
   '''
   
-  param = {'csv_file_name':None,'prng_seed':None,'num_cdmp_actors':None,\
-            'num_epochs':None,'trainPerc':None,'devePerc':None,\
+  param = {'prng_seed':None,'num_cdmp_actors':None,\
+            'epochs':None,'trainPerc':None,'devePerc':None,\
             'batch_size':None,'learn_rate':None,'lambd':None,\
             'hiddenLayerWs':None,'optimMeth':None}
 
@@ -484,10 +495,11 @@ def ReadInputs(modelInput):
     # read in each set of parameters
     params = [param.copy() for _ in range(runs)]
     for i in range(runs):
-      params[i]['csv_file_name'] = f.readline().rstrip('\n')
       params[i]['prng_seed'] = int(f.readline().rstrip('\n'))
       params[i]['num_cdmp_actors'] = int(f.readline().rstrip('\n'))
-      params[i]['num_epochs'] = int(f.readline().rstrip('\n'))
+      tmp = list(f.readline().rstrip('\n').split())
+      params[i]['epochs'] = {'epochMax':int(tmp[0]), 'epochMin':int(tmp[1]),\
+            'epochLB':int(tmp[2]), 'convgCrit':float(tmp[3])}
       tmp = list(map(float, f.readline().rstrip('\n').split()))
       params[i]['trainPerc'] = tmp[0]
       params[i]['devePerc'] = tmp[1]
@@ -504,21 +516,25 @@ if __name__ == '__main__':
   #prng_seed = 0         # irreproducible
   #prng_seed = 42
 
-  # first need to get the model parameters input file
+  # first need to get the data & model parameters input files
   
-  modelInput = sys.argv[1]
+  dataInput = sys.argv[1]
+  modelInput = sys.argv[2]
   stt = datetime.datetime.now()
+  print('Reading data from: %s'%dataInput)
+  x_data,y_data = ReadData(dataInput)
+  
   print('Reading model parameters from %s'%modelInput)
-  descrip,params = ReadInputs(modelInput)
-  print('----------\nRunning model inputs: %s\n----------'%descrip)
+  descrip,params = ReadModel(modelInput)
   
   # run the model(s)
-  devSetPerfs = [None]*len(params)
+  print('----------\nRunning model inputs: %s\n----------'%descrip)
+  lossDevSetPerfs = [None]*len(params)
   for i,p in enumerate(params):
-    devSetPerfs[i] = RunNN(p['csv_file_name'], p['prng_seed'], p['trainPerc'],\
-               p['devePerc'], p['learn_rate'], p['lambd'], p['batch_size'],\
-               p['num_epochs'], p['num_cdmp_actors'], p['hiddenLayerWs'],\
-               p['optimMeth'])
+    lossDevSetPerfs[i] = RunNN(x_data, y_data, p['epochs'], p['prng_seed'],\
+                   p['trainPerc'], p['devePerc'], p['learn_rate'], p['lambd'],\
+                   p['batch_size'], p['num_cdmp_actors'], p['hiddenLayerWs'],\
+                   p['optimMeth'])
 
   # print elapsed time
   print('----------\nTotal Elapsed Time: %s\n----------'%(datetime.datetime.now()-stt))
