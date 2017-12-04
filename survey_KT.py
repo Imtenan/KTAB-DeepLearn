@@ -49,8 +49,8 @@ import klib as kl
 
 ''' RUN THE NEURAL NETWORK '''
 def RunNN(x_data, y_data, epochs, prng_seed = 0, trainPerc = 0.95, devePerc = 0.05,\
-          learn_rate = 1.0, lambd = 0.5, batch_size = 100, num_cdmp_actors = 4,\
-          hiddenLayerWs = [100,100], optimMeth = 'GD'):
+          learn_rate = 1.0, regulRate = 0.5, batch_size = 100, num_cdmp_actors = 4,\
+          hiddenLayerWs = [100,100], optimMeth = 'GD', dropoutKeep = 1.0):
   # variable counts
   num_data_col = x_data.shape[1]
   num_choice_col = y_data.shape[1]
@@ -109,23 +109,24 @@ def RunNN(x_data, y_data, epochs, prng_seed = 0, trainPerc = 0.95, devePerc = 0.
   
   with tf.name_scope('HyperParms'):
     lr = tf.constant(learn_rate)
-    la = tf.constant(lambd)
+    la = tf.constant(regulRate)
     bs = tf.constant(batch_size)
     ne = tf.constant(epochs['epochMax'])
     dp = tf.constant(devePerc)
     hl = tf.constant(hidden_layers)
     mt = tf.constant(num_cdmp_actors)
     om = tf.constant(['GD','ADAM','RMSPROP'].index(optimMeth))
+    dk = tf.constant(dropoutKeep)
     # summaries
     parmSumm = tf.summary.merge([tf.summary.scalar('learn_rate', lr),\
               tf.summary.scalar('regul_rate', la), tf.summary.scalar('minibatch_size',bs),\
               tf.summary.scalar('epochs',ne), tf.summary.scalar('dev_set_size',dp),\
               tf.summary.scalar('hidden_layers',hl), tf.summary.scalar('num_cdmp_actors',mt),\
-              tf.summary.scalar('optim_method',om)])
+              tf.summary.scalar('optim_method',om),tf.summary.scalar('dropout keep',dk)])
   
   # talk some
-  print('Hyperparameters\n\tlearning rate: %0.2f\n\tregularization rate: %0.2f\n\tminibatch size: %u\n\tnumber epochs: %d\n\thidden layers: %d\n\tCDMP actors: %d\n\toptim. method: %s'\
-        %(learn_rate,lambd,batch_size,epochs['epochMax'],hidden_layers,num_cdmp_actors,optimMeth))
+  print('Hyperparameters\n\tlearning rate: %0.2f\n\tregularization rate: %0.2f\n\tminibatch size: %u\n\tnumber epochs: %d\n\thidden layers: %d\n\tCDMP actors: %d\n\toptim. method: %s\n\tdropout keep: %0.2f'\
+        %(learn_rate,regulRate,batch_size,epochs['epochMax'],hidden_layers,num_cdmp_actors,optimMeth,dropoutKeep))
   
   # create the logfile prefix
   log_file_name = 'log_%s%03d_%s_%05d_%s_%d'%(modelType,hidden_layers,optimMeth,epochs['epochMax'],stime.strftime('%Y%m%d_%H%M%S'),prng_seed)
@@ -236,7 +237,7 @@ def RunNN(x_data, y_data, epochs, prng_seed = 0, trainPerc = 0.95, devePerc = 0.
       my_opt = tf.train.RMSPropOptimizer(learn_rate)
     else:
       raise ValueError('Optimizer can only be "GD", "ADAM", or "RMSPROP"!')
-    train_step = my_opt.minimize(loss + lambd*regularizer/(2*batch_size))
+    train_step = my_opt.minimize(loss + regulRate*regularizer/(2*batch_size))
   
   # ---------------------------------------------
   #%%
@@ -373,7 +374,7 @@ def RunNN(x_data, y_data, epochs, prng_seed = 0, trainPerc = 0.95, devePerc = 0.
   print('Actl. Counts by Class: %r'%np.sum(y_vals_deve,axis=0,dtype=int).tolist())
   print('Pred. Counts by Class: %r'%np.sum(pred,axis=0,dtype=int).tolist())
   # save dev set actuals & preds - might not want to do this permanently
-  np.savetxt(os.getcwd()+'/out/actu_pred.csv',np.c_[y_vals_deve,pred].shape,'%d',\
+  np.savetxt(os.getcwd()+'/out/actu_pred.csv',np.c_[y_vals_deve,pred],'%d',\
              header='first %d columns are actuals, the rest are predictions'%num_choice_col)
   
   # ---------------------------------------------
@@ -468,24 +469,25 @@ def ReadModel(modelInput):
   '''
   Read in from a text file the parameters for a NN run.  There may be parameters
   for multiple runs.  Format is:
-  first line - integer number of parameter sets in 9 lines per set
-  prng_seed = int
+  first line - integer: number of parameter sets in 10 lines per set
+  prng_seed = int: psuedo random-number generator seed
   num_cdmp_actors = int: if 0, non-CDMP is used
   epochs = [int, int, int, float]: epochMax, epochMin, epochLookback, convgCrit
-  trainPerc, devePerc = two floats which sum to 1
-  batch_size = int
-  learn_rate = float
-  lambd = float
-  hiddenLayerWs = list of ints
-  optimMeth = string name of optimizer: GD, ADAM, or RMSPROP
+  trainPerc, devePerc = two floats: sum to 1 and split the data
+  batch_size = int: batch size for training
+  learn_rate = float: learning rate for the optimizer
+  regulRate = float: regularization rate
+  hiddenLayerWs = list of ints: width of all hidden layers
+  optimMeth = string: name of optimizer: GD, ADAM, or RMSPROP
+  dropoutKeep = float: proportion of data to keep in dropout; 1.0=no dropout
   
   Returns a model runs descriptive text and a list of parameter dicts
   '''
   
   param = {'prng_seed':None,'num_cdmp_actors':None,\
             'epochs':None,'trainPerc':None,'devePerc':None,\
-            'batch_size':None,'learn_rate':None,'lambd':None,\
-            'hiddenLayerWs':None,'optimMeth':None}
+            'batch_size':None,'learn_rate':None,'regulRate':None,\
+            'hiddenLayerWs':None,'optimMeth':None,'dropoutKeep':None}
 
   with open(modelInput,'rt') as f:
     # first line is a descriptive comment, so just read it in and print it
@@ -505,9 +507,10 @@ def ReadModel(modelInput):
       params[i]['devePerc'] = tmp[1]
       params[i]['batch_size'] = int(f.readline().rstrip('\n'))
       params[i]['learn_rate'] = float(f.readline().rstrip('\n'))
-      params[i]['lambd'] = float(f.readline().rstrip('\n'))
+      params[i]['regulRate'] = float(f.readline().rstrip('\n'))
       params[i]['hiddenLayerWs'] = list(map(int, f.readline().rstrip('\n').split()))
       params[i]['optimMeth'] = f.readline().rstrip('\n')
+      params[i]['dropoutKeep'] = float(f.readline().rstrip('\n'))
 
   return descrip,params
 
@@ -532,9 +535,9 @@ if __name__ == '__main__':
   lossDevSetPerfs = [None]*len(params)
   for i,p in enumerate(params):
     lossDevSetPerfs[i] = RunNN(x_data, y_data, p['epochs'], p['prng_seed'],\
-                   p['trainPerc'], p['devePerc'], p['learn_rate'], p['lambd'],\
+                   p['trainPerc'], p['devePerc'], p['learn_rate'], p['regulRate'],\
                    p['batch_size'], p['num_cdmp_actors'], p['hiddenLayerWs'],\
-                   p['optimMeth'])
+                   p['optimMeth'],p['dropoutKeep'])
 
   # print elapsed time
   print('----------\nTotal Elapsed Time: %s\n----------'%(datetime.datetime.now()-stt))
