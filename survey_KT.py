@@ -50,7 +50,7 @@ import klib as kl
 ''' RUN THE NEURAL NETWORK '''
 def RunNN(csv_file_name, prng_seed = 0, trainPerc = 0.95, devePerc = 0.05, \
           learn_rate = 1.0, lambd = 0.5, batch_size = 100, num_epochs = 2500,\
-          num_cdmp_actors = 4, hiddenLayerWs = [100,100]):
+          num_cdmp_actors = 4, hiddenLayerWs = [100,100], optimMeth = 'GD'):
   # ---------------------------------------------
   #%%
   sys.stdout.flush()
@@ -163,18 +163,20 @@ def RunNN(csv_file_name, prng_seed = 0, trainPerc = 0.95, devePerc = 0.05, \
     dp = tf.constant(devePerc)
     hl = tf.constant(hidden_layers)
     mt = tf.constant(num_cdmp_actors)
+    om = tf.constant(['GD','ADAM','RMSPROP'].index(optimMeth))
     # summaries
     parmSumm = tf.summary.merge([tf.summary.scalar('learn_rate', lr),\
               tf.summary.scalar('regul_rate', la), tf.summary.scalar('minibatch_size',bs),\
               tf.summary.scalar('epochs',ne), tf.summary.scalar('dev_set_size',dp),\
-              tf.summary.scalar('hidden_layers',hl), tf.summary.scalar('num_cdmp_actors',mt)])
+              tf.summary.scalar('hidden_layers',hl), tf.summary.scalar('num_cdmp_actors',mt),\
+              tf.summary.scalar('optim_method',om)])
   
   # talk some
-  print('Hyperparameters\n\tlearning rate: %0.2f\n\tregularization rate: %0.2f\n\tminibatch size: %u\n\tnumber epochs: %d\n\thidden layers: %d\n\tCDMP actors: %d'\
-        %(learn_rate,lambd,batch_size,num_epochs,hidden_layers,num_cdmp_actors))
+  print('Hyperparameters\n\tlearning rate: %0.2f\n\tregularization rate: %0.2f\n\tminibatch size: %u\n\tnumber epochs: %d\n\thidden layers: %d\n\tCDMP actors: %d\n\toptim. method: %s'\
+        %(learn_rate,lambd,batch_size,num_epochs,hidden_layers,num_cdmp_actors,optimMeth))
   
   # create the logfile prefix
-  log_file_name = 'log_%s%03d_%05d_%s_%d'%(modelType,hidden_layers,num_epochs,stime.strftime('%Y%m%d_%H%M%S'),prng_seed)
+  log_file_name = 'log_%s%03d_%s_%05d_%s_%d'%(modelType,hidden_layers,optimMeth,num_epochs,stime.strftime('%Y%m%d_%H%M%S'),prng_seed)
   
   # ---------------------------------------------
   #%%
@@ -274,7 +276,14 @@ def RunNN(csv_file_name, prng_seed = 0, trainPerc = 0.95, devePerc = 0.05, \
   
   with tf.name_scope('Train'):
     regularizer =  tf.add_n([tf.nn.l2_loss(A) for A in layerParams['A'].values()])
-    my_opt = tf.train.GradientDescentOptimizer(learn_rate)
+    if optimMeth == 'GD':
+      my_opt = tf.train.GradientDescentOptimizer(learn_rate)
+    elif optimMeth == 'ADAM':
+      my_opt = tf.train.AdamOptimizer(learn_rate)
+    elif optimMeth == 'RMSPROP':
+      my_opt = tf.train.RMSPropOptimizer(learn_rate)
+    else:
+      raise ValueError('Optimizer can only be "GD", "ADAM", or "RMSPROP"!')
     train_step = my_opt.minimize(loss + lambd*regularizer/(2*batch_size))
   
   # ---------------------------------------------
@@ -465,7 +474,7 @@ def ReadInputs(modelInput):
   param = {'csv_file_name':None,'prng_seed':None,'num_cdmp_actors':None,\
             'num_epochs':None,'trainPerc':None,'devePerc':None,\
             'batch_size':None,'learn_rate':None,'lambd':None,\
-            'hiddenLayerWs':None}
+            'hiddenLayerWs':None,'optimMeth':None}
 
   with open(modelInput,'rt') as f:
     # first line is a descriptive comment, so just read it in and print it
@@ -486,6 +495,7 @@ def ReadInputs(modelInput):
       params[i]['learn_rate'] = float(f.readline().rstrip('\n'))
       params[i]['lambd'] = float(f.readline().rstrip('\n'))
       params[i]['hiddenLayerWs'] = list(map(int, f.readline().rstrip('\n').split()))
+      params[i]['optimMeth'] = f.readline().rstrip('\n')
 
   return descrip,params
 
@@ -495,18 +505,23 @@ if __name__ == '__main__':
   #prng_seed = 42
 
   # first need to get the model parameters input file
+  
   modelInput = sys.argv[1]
+  stt = datetime.datetime.now()
   print('Reading model parameters from %s'%modelInput)
   descrip,params = ReadInputs(modelInput)
-  print('Running model inputs: %s'%descrip)
+  print('----------\nRunning model inputs: %s\n----------'%descrip)
   
   # run the model(s)
   devSetPerfs = [None]*len(params)
   for i,p in enumerate(params):
     devSetPerfs[i] = RunNN(p['csv_file_name'], p['prng_seed'], p['trainPerc'],\
                p['devePerc'], p['learn_rate'], p['lambd'], p['batch_size'],\
-               p['num_epochs'], p['num_cdmp_actors'], p['hiddenLayerWs'])
+               p['num_epochs'], p['num_cdmp_actors'], p['hiddenLayerWs'],\
+               p['optimMeth'])
 
+  # print elapsed time
+  print('----------\nTotal Elapsed Time: %s\n----------'%(datetime.datetime.now()-stt))
 # ---------------------------------------------
 # Copyright KAPSARC. Open source MIT License.
 # ---------------------------------------------
