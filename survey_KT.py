@@ -25,12 +25,10 @@
 #
 # Neural net to learn one-hot encoding, with a variable number of hidden layers
 # tunable hyperparameters are: learning rate, regularization rate, minibatch size
-# number of hidden layers, and hidden layer(s) width
+# number of hidden layers, hidden layer(s) width, optimizer, dropout.
 #
 # Note: the loss function is currently the sigmoid cross entropy of the final
-# layer, while I suspect it should be the softmax cross entropy.  Optimization
-# is with GradientDescent, but intend to try momentum or ADAM optimization also.
-# Dropout is *not* currently used.
+# layer, while I suspect it should be the softmax cross entropy.
 #
 # ---------------------------------------------
 
@@ -106,6 +104,7 @@ def RunNN(x_data, y_data, epochs, prng_seed = 0, trainPerc = 0.95, devePerc = 0.
   layerWidths.extend(hiddenLayerWs)
   layerWidths.append(num_choice_col)
   hidden_layers = len(layerWidths)-2     # number hidden layers
+  keepProb = tf.placeholder(tf.float32)  # placeholder for dropout
   
   with tf.name_scope('HyperParms'):
     lr = tf.constant(learn_rate)
@@ -214,9 +213,11 @@ def RunNN(x_data, y_data, epochs, prng_seed = 0, trainPerc = 0.95, devePerc = 0.
           layerActivs[i] =  tf.add(tf.matmul(layerActivs[i-1], layerParams['A'][i]),\
                      layerParams['b'][i])
       else:
-        # hidden layer, so apply the activation function
+        # hidden layer, so apply the activation function ...
         layerActivs[i] = tf.nn.relu(tf.add(tf.matmul(layerActivs[i-1],layerParams['A'][i]),\
                    layerParams['b'][i]))
+        # ... then add dropout to the hidden layer
+        layerActivs[i] = tf.nn.dropout(layerActivs[i], keepProb)
       print('Activ%d shape: %s'%(i,layerActivs[i].shape))
   
   # ---------------------------------------------
@@ -284,7 +285,7 @@ def RunNN(x_data, y_data, epochs, prng_seed = 0, trainPerc = 0.95, devePerc = 0.
     rand_x = x_vals_train[batchIndxs[i],:]
     rand_y = y_vals_train[batchIndxs[i],:]
     # train on this batch, and record loss on it
-    xy_dict = {x_data:rand_x, y_trgt:rand_y}
+    xy_dict = {x_data:rand_x, y_trgt:rand_y, keepProb:dropoutKeep}
     
     # train, get the loss & it's summary, and predictions
     _,tmp_loss,pred = sess.run([train_step,loss,tf.round(tf.sigmoid(layerActivs[-1]))],\
@@ -342,13 +343,14 @@ def RunNN(x_data, y_data, epochs, prng_seed = 0, trainPerc = 0.95, devePerc = 0.
     # process the minibatches
     pred = []
     for x,y in zip(bX,bY):
-      xy_dict = {x_data:x, y_trgt:y}
+      xy_dict = {x_data:x, y_trgt:y, keepProb:1.0}
       pred.extend(sess.run(tf.round(tf.sigmoid(layerActivs[-1])), xy_dict))
     pred = np.r_[pred]
     # finally build the new dictionary for model evaluation
-    xy_dict = {x_data:x_vals_deve, y_trgt:y_vals_deve, yhat:pred[:(x_vals_deve.shape[0]+1)]}
+    xy_dict = {x_data:x_vals_deve, y_trgt:y_vals_deve,\
+               yhat:pred[:(x_vals_deve.shape[0]+1)], keepProb:1.0}
   else:
-    xy_dict = {x_data:x_vals_deve, y_trgt:y_vals_deve}
+    xy_dict = {x_data:x_vals_deve, y_trgt:y_vals_deve, keepProb:1.0}
     pred = sess.run(tf.round(tf.sigmoid(layerActivs[-1])), xy_dict)
     xy_dict[yhat] = pred
   acc_deve,pre_deve,rec_deve,f1s_deve,summ = sess.run([accuracy,precision,\
