@@ -426,9 +426,8 @@ def RunNN(x_data, y_data, epochs, prng_seed = 0, trainPerc = 0.95, devePerc = 0.
 def ReadData(dataInput):
   '''
   Read in the CSV-formatted data text file.  Format is:
-  header line: # rows, # categorical var cols (I1), # float var cols (I2), 
-    # categorical var cols (I3), # categorical response cols (D1)
-  all else: first I1+I2+I3 columns = independent data; last D1 columns = dependent data
+  header line: # rows, # columns independent vars, # columns dependent vars
+  all else: all independent data; all dependent data
   '''
   
   csvfile = open(dataInput, newline='')  
@@ -440,27 +439,21 @@ def ReadData(dataInput):
   # read and parse the header row
   # The data file format will have to be changed to (num_rows, num_data, num_choice)
   print('csv length: ' + str(len(csv_data)))
-  survey_headers = [int(x) for x in csv_data[0]] # Num rows, cat1, float, cat2, choice
+  survey_headers = [int(x) for x in csv_data[0]] # Num rows, # indep vars, # dep vars
   num_rows = survey_headers[0]
   print("expected num_rows: %u" % (num_rows))
-  num_cat1 = survey_headers[1]
-  print("expected num_cat1: %u" % (num_cat1))
-  num_float = survey_headers[2]
-  print("expected num_float: %u" % (num_float))
-  num_cat2 = survey_headers[3]
-  print("expected num_cat2: %u" % (num_cat2))
-  num_data_col = num_cat1 + num_float + num_cat2
-  print("expected num_data_col: %u" % (num_data_col))
-  num_choice_col = int(survey_headers[4])
-  print("expected num_choice_col: %u" % (num_choice_col))
+  num_indeps = survey_headers[1]
+  print("expected num_indeps: %u" % (num_indeps))
+  num_deps = survey_headers[2]
+  print("expected num_deps: %u" % (num_deps))
   
   # parse data
   survey_list = csv_data[1:] # list of lists
   data_len = len(survey_list)
   print('survey data length: ' + str(data_len))  
   survey_data = [ [float(x) for x in y] for y in survey_list ]
-  x_data = np.array([x[0:num_data_col] for x in survey_data]) # [0,6) == [0,5]      
-  y_data = np.array([y[num_data_col:num_data_col+num_choice_col] for y in survey_data])
+  x_data = np.array([x[0:num_indeps] for x in survey_data]) # [0,6) == [0,5]      
+  y_data = np.array([y[num_indeps:num_indeps+num_deps] for y in survey_data])
 #  x_headers = [h for h in survey_headers[1:6]] 
   print('x-shape: ' + str(x_data.shape))
   print('y-shape: ' + str(y_data.shape)) 

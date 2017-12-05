@@ -321,7 +321,7 @@ def write_one_survey_record(survey_cat1, survey_cat2, survey_floats, vhcl_choice
 
 with open('tmp_survey2.csv', 'w', newline='') as csvfile:
     my_writer = csv.writer(csvfile, delimiter=',', quotechar='|', quoting=csv.QUOTE_MINIMAL) 
-    param_list = list(np.array([num_batch*batch_size, num_survey_cat1, num_survey_float, num_survey_cat2, num_choice]))
+    param_list = list(np.array([num_batch*batch_size, num_survey_cat1+num_survey_float+num_survey_cat2, num_choice]))
     my_writer.writerow(param_list)
     for n in range(num_batch):
         if (0 == (n+1)%print_freq):
