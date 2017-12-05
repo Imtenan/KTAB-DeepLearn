@@ -426,7 +426,9 @@ def RunNN(x_data, y_data, epochs, prng_seed = 0, trainPerc = 0.95, devePerc = 0.
 def ReadData(dataInput):
   '''
   Read in the CSV-formatted data text file.  Format is:
-  blah blah blah
+  header line: # rows, # categorical var cols (I1), # float var cols (I2), 
+    # categorical var cols (I3), # categorical response cols (D1)
+  all else: first I1+I2+I3 columns = independent data; last D1 columns = dependent data
   '''
   
   csvfile = open(dataInput, newline='')  
