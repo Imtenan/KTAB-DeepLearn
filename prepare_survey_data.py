@@ -35,13 +35,12 @@ import csv
 import math
 import os
 
-counter=0
 data_file_name = 'survey.csv'
 output_file_name = 'survey_ready'
 outHeader = 'survey_head'
 
 # Read the csv data file
-data = pd.read_csv(data_file_name)
+data = pd.read_csv(os.getcwd()+os.sep+data_file_name)
 
 # Calculate the number of rows in the dataset, number of data attributes (independent var)
 # and number of choice attributes (dependent var)
@@ -67,8 +66,8 @@ maxMissing = int(input("Please enter the index number of the cutoff above:"))
 toKeep = toKeeps[maxMissing]
 toKeep[-1] = True # be sure the response variable is kept
 # update output file names
-output_file_name += '_%d'%(100*maxMissPercs[maxMissing])
-outHeader += '_%d'%(100*maxMissPercs[maxMissing])
+output_file_name += '_%d.csv'%(100*maxMissPercs[maxMissing])
+outHeader += '_%d.txt'%(100*maxMissPercs[maxMissing])
 
 # Get the reduced dataset
 dataKeep = data.loc[:,toKeep].dropna()
@@ -77,12 +76,12 @@ del(data)
 num_indeps -= 1
 
 # Write the dataset to the output data files
-with open(os.getcwd() + os.sep + output_file_name+'.csv', 'w',newline='') as f:
+with open(os.getcwd() + os.sep + output_file_name, 'w',newline='') as f:
 	writer=csv.writer(f)
 	writer.writerow([num_rows,num_indeps,1])
 	dataKeep.to_csv(f, header=False, index=False)
 
-with open(os.getcwd() + os.sep + outHeader+'.txt','w') as f:
+with open(os.getcwd() + os.sep + outHeader,'w') as f:
   f.write('\n'.join(dataKeep.columns.tolist()))
 
 print('Wrote %d records with %d indep. variables to %s (column names in %s)'%\
