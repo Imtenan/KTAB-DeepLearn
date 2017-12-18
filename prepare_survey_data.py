@@ -32,10 +32,13 @@
 import numpy as np
 import pandas as pd
 import csv
+import math
+import os
 
 counter=0
 data_file_name = 'survey.csv'
-output_file_name = 'survey_ready.csv'
+output_file_name = 'survey_ready'
+outHeader = 'survey_head'
 
 # Read the csv data file
 data = pd.read_csv(data_file_name)
@@ -50,28 +53,40 @@ num_indeps-=num_deps
 missing = np.sum(pd.isnull(data))
 origCount = max(data.count())
 
-# Take the refernce number of empty cells from the user
-targCount = int(input("Maximum number of null values:"))
-maxMissing = origCount - targCount
-toKeep = (missing < maxMissing)
+''' Get the allowed number of empty cells from the user '''
+# first show the user the choices
+maxMissPercs = [0.1, 0.2, 0.25, 0.4, 0.5, 0.75, 0.9]
+toKeeps = [None]*len(maxMissPercs)
+for i,perc in enumerate(maxMissPercs):
+  maxMissing = math.floor(perc*origCount)
+  toKeeps[i] = missing < maxMissing
+  print('%d: Variables with missing cutoff at %d, %d max. rows (%0.2f%%) = %d'%\
+        (i,maxMissing,origCount-maxMissing,100*perc,sum(toKeeps[i])))
+# now get their choice & implement
+maxMissing = int(input("Please enter the index number of the cutoff above:"))
+toKeep = toKeeps[maxMissing]
+toKeep[-1] = True # be sure the response variable is kept
+# update output file names
+output_file_name += '_%d'%(100*maxMissPercs[maxMissing])
+outHeader += '_%d'%(100*maxMissPercs[maxMissing])
 
-# Edit the independent var count
-for x in toKeep:
-    if toKeep[x] == False:
-         counter+=1
+# Get the reduced dataset
+dataKeep = data.loc[:,toKeep].dropna()
+del(data)
+(num_rows,num_indeps) = dataKeep.shape
+num_indeps -= 1
 
-num_indeps=counter
-
-# Edit the dataset
-data = data[data.columns[toKeep]]
-
-# Write the dataset to the output data file
-with open(output_file_name, 'w',newline='') as f:
+# Write the dataset to the output data files
+with open(os.getcwd() + os.sep + output_file_name+'.csv', 'w',newline='') as f:
 	writer=csv.writer(f)
 	writer.writerow([num_rows,num_indeps,1])
-	data.to_csv(f, header=False, index=False)
+	dataKeep.to_csv(f, header=False, index=False)
 
+with open(os.getcwd() + os.sep + outHeader+'.txt','w') as f:
+  f.write('\n'.join(dataKeep.columns.tolist()))
 
+print('Wrote %d records with %d indep. variables to %s (column names in %s)'%\
+      (num_rows,num_indeps,output_file_name,outHeader))
 # ---------------------------------------------
 # Copyright KAPSARC. Open source MIT License.
 # ---------------------------------------------
