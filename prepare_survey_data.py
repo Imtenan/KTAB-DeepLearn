@@ -42,12 +42,13 @@ outHeader = 'survey_head'
 # Read the csv data file
 data = pd.read_csv(os.getcwd()+os.sep+data_file_name)
 
-# Calculate the number of rows in the dataset, number of data attributes (independent var)
-# and number of choice attributes (dependent var)
-num_rows, num_indeps = data.shape
-num_deps=1
-num_indeps-=num_deps
-
+# need to one-hot-encode the dependent variable
+ohe = pd.get_dummies(data['fuel_size'],'fuel_size')
+#ohe = ohe.apply(pd.DataFrame.astype,axis=0,args=('int')) should these be converted to ints?
+data.drop('fuel_size',axis=1,inplace=True)
+data = data.join(ohe,how='inner')
+num_deps = len(ohe.columns)
+                                                                
 # Calculate the number of columns (attributes) to keep 
 missing = np.sum(pd.isnull(data))
 origCount = max(data.count())
@@ -64,7 +65,7 @@ for i,perc in enumerate(maxMissPercs):
 # now get their choice & implement
 maxMissing = int(input("Please enter the index number of the cutoff above:"))
 toKeep = toKeeps[maxMissing]
-toKeep[-1] = True # be sure the response variable is kept
+toKeep[-num_deps:] = True # be sure the response variables are kept
 # update output file names
 output_file_name += '_%d.csv'%(100*maxMissPercs[maxMissing])
 outHeader += '_%d.txt'%(100*maxMissPercs[maxMissing])
@@ -73,12 +74,12 @@ outHeader += '_%d.txt'%(100*maxMissPercs[maxMissing])
 dataKeep = data.loc[:,toKeep].dropna()
 del(data)
 (num_rows,num_indeps) = dataKeep.shape
-num_indeps -= 1
+num_indeps -= num_deps
 
 # Write the dataset to the output data files
 with open(os.getcwd() + os.sep + output_file_name, 'w',newline='') as f:
 	writer=csv.writer(f)
-	writer.writerow([num_rows,num_indeps,1])
+	writer.writerow([num_rows,num_indeps,num_deps])
 	dataKeep.to_csv(f, header=False, index=False)
 
 with open(os.getcwd() + os.sep + outHeader,'w') as f:

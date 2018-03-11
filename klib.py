@@ -89,6 +89,28 @@ def weighted_max_ndx (vm1, offset=0, norm=True):
 
 # ---------------------------------------------
 #%%
+    
+def predFromProb(classProbs):
+  '''
+  Take in as input an (m x p) matrix of m observations' class probabilities in
+  p classes and return an m-length vector of integer class labels (0...p-1). 
+  Probabilities at or below 1/p are set to 0, as are NaNs; any unclassed
+  observations are randomly assigned to a class.
+  '''
+  numClasses = classProbs.shape[1]
+  # zero out class probs that are at or below chance, or NaN
+  probs = classProbs.copy()
+  probs[np.isnan(probs)] = 0
+  probs = probs*(probs > 1/numClasses)
+  # find any un-classed observations
+  unpred = ~np.any(probs,axis=1)
+  # get the predicted classes
+  preds = np.argmax(probs,axis=1)
+  # randomly classify un-classed observations
+  rnds = np.random.randint(0,numClasses,np.sum(unpred))
+  preds[unpred] = rnds
+  
+  return preds
 
 # ---------------------------------------------
 # Copyright KAPSARC. Open Source MIT License.
