@@ -419,8 +419,8 @@ def RunNN(x_data, y_data, epochs, prng_seed = 0, trainPerc = 0.95, devePerc = 0.
              header='first %d columns are actuals, the rest are predictions'%num_choice_col)
   
   # ---------------------------------------------
-'''  
-#%%
+  '''  
+  #%%
   # Display performance plots
   # loss
   plt.figure()
