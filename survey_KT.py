@@ -33,8 +33,8 @@
 import os
 import sys 
 import csv
-import matplotlib.pyplot as plt
-plt.ion()
+#import matplotlib.pyplot as plt
+#plt.ion()
 import numpy as np 
 import tensorflow as tf
 from tensorflow.python.framework import ops
@@ -419,7 +419,8 @@ def RunNN(x_data, y_data, epochs, prng_seed = 0, trainPerc = 0.95, devePerc = 0.
              header='first %d columns are actuals, the rest are predictions'%num_choice_col)
   
   # ---------------------------------------------
-  #%%
+'''  
+#%%
   # Display performance plots
   # loss
   plt.figure()
@@ -439,7 +440,7 @@ def RunNN(x_data, y_data, epochs, prng_seed = 0, trainPerc = 0.95, devePerc = 0.
   plt.legend(['Accuracy','Precision','Recall','F1'],loc='lower right')
   plt.show()
   plt.savefig(os.getcwd()+'/out/'+log_file_name+'_perf'+'.png')
-  
+  '''
   # ---------------------------------------------
   #%%
   # close out the session and save the event-files
