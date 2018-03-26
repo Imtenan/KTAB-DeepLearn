@@ -603,7 +603,7 @@ if __name__ == '__main__':
   logging.info('----------\nRunning model inputs: %s\n----------'%descrip)
   lossDevSetPerfs = [None]*len(params)
   for i,p in enumerate(params):
-      plt.close('all')
+      #plt.close('all')
       lossDevSetPerfs[i] = RunNN(x_data, y_data, p['epochs'], p['prng_seed'],\
                      p['trainPerc'], p['devePerc'], p['learn_rate'], \
                      p['learn_rate_decay'],p['regulRate'],\
