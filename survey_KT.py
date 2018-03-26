@@ -33,8 +33,10 @@
 import os
 import sys 
 import csv
-#import matplotlib.pyplot as plt
-#plt.ion()
+import matplotlib
+matplotlib.use('Agg') # use Agg backend to enable saving without showing
+import matplotlib.pyplot as plt
+plt.ioff() # turn off interactive plotting
 import numpy as np 
 import tensorflow as tf
 from tensorflow.python.framework import ops
@@ -418,8 +420,7 @@ def RunNN(x_data, y_data, epochs, prng_seed = 0, trainPerc = 0.95, devePerc = 0.
   np.savetxt(os.getcwd()+'/out/'+log_file_name+'_actu_pred.csv',np.c_[y_vals_deve,predOHE],'%d',\
              header='first %d columns are actuals, the rest are predictions'%num_choice_col)
   
-  # ---------------------------------------------
-  '''  
+  # ---------------------------------------------  
   #%%
   # Display performance plots
   # loss
@@ -440,7 +441,6 @@ def RunNN(x_data, y_data, epochs, prng_seed = 0, trainPerc = 0.95, devePerc = 0.
   plt.legend(['Accuracy','Precision','Recall','F1'],loc='lower right')
   plt.show()
   plt.savefig(os.getcwd()+'/out/'+log_file_name+'_perf'+'.png')
-  '''
   # ---------------------------------------------
   #%%
   # close out the session and save the event-files
@@ -603,7 +603,7 @@ if __name__ == '__main__':
   logging.info('----------\nRunning model inputs: %s\n----------'%descrip)
   lossDevSetPerfs = [None]*len(params)
   for i,p in enumerate(params):
-      #plt.close('all')
+      plt.close('all')
       lossDevSetPerfs[i] = RunNN(x_data, y_data, p['epochs'], p['prng_seed'],\
                      p['trainPerc'], p['devePerc'], p['learn_rate'], \
                      p['learn_rate_decay'],p['regulRate'],\
